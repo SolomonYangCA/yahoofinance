@@ -25,9 +25,8 @@ START_DATE = '1993-01-01'
 DATA_SOURCE = 'yahoofinance'
 
 BASE_DIR_PATH = './'
-DATA_DIR_PATH = '%s/data' % BASE_DIR_PATH
 
-SQL_DIR_PATH = '%s/sql' % BASE_DIR_PATH
+SQL_DIR_PATH = '%s/SQL' % BASE_DIR_PATH
 YF_DB_FILE = '%s/yahoofinance.db' % SQL_DIR_PATH
 
 MY_LOG_FILE_NAME = '%s/yahoofinance.log' % BASE_DIR_PATH
@@ -665,6 +664,8 @@ class Sector(YFDB):
         self.dict_industry2sector = {}
 
         rows = self.conn.executemany(""" SELECT * FROM StockSector """)
+
+
 class YFSector(Sector):
     """
     class YFSector: download and api to access yahoo finance sector info
@@ -674,7 +675,7 @@ class YFSector(Sector):
         Sector.__init__(self)
         self.source = 'YF'
         self.source_id = self.get_source_id(self.source)
-        self.debug = 1 
+        self.debug = 0
 
     def re(self, re_str, line, default=0):
         found = re.match(re_str, line)
@@ -758,64 +759,52 @@ class YFSector(Sector):
 
             self.conn.commit()
 
-class YFHistoryData:
+class YFHistoryData(YFDB):
     '''
     Yahoofinance Historic Date Class, download, store and read stock
     daliy historic data from yahoofinance.com
     '''
-    def __init__(self, data_source=DATA_SOURCE):
-        self.data_source = data_source
+    def __init__(self):
         self.re_date = re.compile('^(\d\d\d\d-\d\d-\d\d)')
         return
 
-    # ------------------------------ load ----------------------------------- #
-    # load ticker's historical prices data from DATA_SOURCE
     # ----------------------------------------------------------------------- #
-    def load(self, _ticker='^GSPC', _start=START_DATE, _end='9999-99-99'):
-        return_lines = []
+    def get(self, ticker='^GSPC'):
+        pass
 
-        if self.data_source == 'LOCAL': 
-            with open('%s/YFHPD/^GSPC' % DATA_DIR_PATH, 'r') as f: 
-                for line in f.readlines(): 
-                    # match the DATE in date line
-                    line_match = self.re_date.match(line)
+    def wget(self, ticker='^GSPC'):
+        '''
+        Get ticker's historical prices data from yahoo finance
+        url: http://real-chart.finance.yahoo.com/table.csv?
+             s=NMBL&d=3&e=1&f=2015&g=d&a=11&b=13&c=2013&ignore=.csv
+        NMBL: 2013-12-13 to 2015-3-31
+        a = start_month - 1
+        b = start_day 
+        c = start_year
+        d = end_month - 1
+        e = end_day
+        f = end_year
 
-                    # if not match ^2014-01-01, skip this line
-                    if line_match:
-                        _date = line_match.group(1)
-                        
-                        if _date >= _start and _date <= _end:
-                            return_lines.append(line)
+        So, let's take an easy way: 1900-0-1 to 9999-12-1
+        url: http://real-chart.finance.yahoo.com/table.csv?
+             s=%s&d=12&e=1&f=9999&g=d&a=0&b=1&c=1900&ignore=.csv
+        '''
 
-        if self.data_source == 'yahoofinance':
-            # get starting and end Y/M/D
-            sy, sm, sd = map(int, _start.split('-'))
-            ey, em, ed = map(int, _end.split('-'))
+        url_addr = 'http://real-chart.finance.yahoo.com/table.csv?s=%s' %\
+            ticker
+        parameters ='&d=12&e=1&f=9999&g=d&a=0&b=1&c=1900&ignore=.csv'
 
-            # construct url to download history data
-            url = 'http://real-chart.finance.yahoo.com/table.csv?%s' % \
-            urlencode(
-            {
-                's': _ticker, 
-                'a': sm - 1, 
-                'b': sd,
-                'c': sy,
-                'd': em - 1, 
-                'e': ed,
-                'f': ey,
-                'g': 'd',
-                'ignore': '.csv',
-            }
-            )
-
-            req = Request(url)
-            try: 
-                response = urlopen(req)
-            except:
-                print ('Error')
-            else: 
-                data = str(response.read().decode('utf-8').strip())
-                for line in data.splitlines():
+        url = url_addr + parameters 
+        
+        req = Request(url) 
+        
+        try: 
+            response = urlopen(req) 
+        except: 
+            print ('Error') 
+        else: 
+            data = str(response.read().decode('utf-8').strip())
+            for line in data.splitlines():
                     # match the DATE in date line
                     line_match = self.re_date.match(line)
 
@@ -859,7 +848,7 @@ class YFDate:
 
         # sp500_days   -> all sp days in chronological order
         self.sp500_days = []
-        self.load_sp_days()
+        #self.load_sp_days()
 
         # ------------------------------------------------------------------- #
         # get all OE days, 3rd friday of the mth
@@ -886,7 +875,7 @@ class YFDate:
     def load_sp_days(self):
         yfhd = YFHistoryData()
 
-        for line in yfhd.load('^GSPC'): 
+        for line in yfhd.get('^GSPC'): 
             self.sp500_days.append(line.split(',')[0])
         
         self.sp500_days.reverse() 
@@ -1126,22 +1115,113 @@ class YFDate:
         return str(num_days)
 
 
+def top_usage():
+    print '''
+usage: yahoofinance.py <command> [<args]>
+
+The most commonly used yahoofinance commands are:
+   test-yfdate    Test class YFDate
+   test-yfsector  Test class YFSector
+
+See 'yahoofinance.py <command> help' for more informationon a specific command.'''
+
+
 if __name__ == "__main__":
 
     if len(sys.argv) <= 1:
-        print 'usage: %s test......' $ sys.argv[0]
+        top_usage()
+    elif len(sys.argv) > 1 and sys.argv[1] == 'test-yfdate': 
+        _yfd = YFDate()
 
-    elif len(sys.argv) > 1 and sys.argv[1] == 'wget':
+        if len(sys.argv) > 2 and sys.argv[2] == 'help':
+            print '''
+usage: yahoofinance.py test-yfdate <method_name> <args>
+
+yahoofinance.py test-yfdate get_list_quarters <Quarter> <num_quarter> <0|1: includ_this>
+like: get_list_quarters 2001Q1 10 0
+
+yahoofinance.py test-yfdate get_month_weekday_number <Date> <formate:number|text>
+like: get_month_weekday_number 2015-03-01 number
+'''
+        #def get_list_quarters(self, start_quarter, number, include_this=1)
+        elif len(sys.argv) > 2 and sys.argv[2] == 'get_list_quarters':
+            print _yfd.get_list_quarters(*sys.argv[3:])
+        
+        #def get_month_weekday_number(self, date, format='text')
+        elif len(sys.argv) > 2 and sys.argv[2] == 'get_month_weekday_number':
+            print _yfd.get_month_weekday_number(*sys.argv[3:])
+
+        elif len(sys.argv) > 2 and sys.argv[2] == 'sp500_days':
+            try:
+                print 'sp500 day:', _yfd.sp500_days[int(sys.argv[3]]
+            except:
+                print 'incorrect range :', sys.argv[3]
+
+        elif len(sys.argv) > 2 and sys.argv[2] == 'sp500_days':
+        print '!!!! 1980-01-01 !!!!'
+        print _yfd.index_by_sp_day('1980-01-01')
+        print _yfd.get_sp_day('1980-01-01')
+        print _yfd.get_sp_day('1980-01-01', 'previous')
+
+        print '!!!! 2019-01-01 !!!!'
+        print _yfd.index_by_sp_day('2019-01-01')
+        print _yfd.get_sp_day('2019-01-01')
+        print _yfd.get_sp_day('2019-01-01', 'previous')
+
+        print '!!!! first sp day !!!!'
+        print _yfd.index_by_sp_day(_yfd.sp500_days[0])
+        print _yfd.get_sp_day(_yfd.sp500_days[0])
+        print _yfd.get_sp_day(_yfd.sp500_days[0], 'previous')
+
+        print '!!!! last sp day !!!!'
+        print _yfd.index_by_sp_day(_yfd.sp500_days[-1])
+        print _yfd.get_sp_day(_yfd.sp500_days[-1])
+        print _yfd.get_sp_day(_yfd.sp500_days[-1], 'previous')
+
+        #def sp_day_diff(self, date1, date2):
+        for d1, d2 in zip(
+            [_yfd.sp500_days[0], '2015-01-09', '2015-01-01'],
+            [_yfd.sp500_days[-1], '2014-12-31', '2013-01-01']
+            ) :
+            print d1, '-', d2, ': ', _yfd.sp_day_diff(d1, d2)
+
+        #def sp_day_offset(self, date, offset):
+        for offset in ['10', '-10', '+1w', '1w', '-1W', '+1M', '-1M', '3M', '-3M', '-2Y', '2Y']:
+            print '2015-01-02 ', offset, _yfd.sp_day_offset('2015-01-02', offset)
+
+        #def number_sp_days(self, str):
+        for s in ['10d', '-10d', '10', '-10', '10W', '-10w', '10m', '-10M']:
+            print s, ': ', _yfd.number_sp_days(s)
+
+        print 'get_month_range, 2013-11, 10', _yfd.get_month_range('2013-11', '10')
+
+        for m in ['Jan', 'january', 'Feb', 'March', 'August', 'Ocx']:
+            print _yfd.month_atoi(m)
+            print month_atoi(m)
+
+        for s in ['August 2, 2001', 'Dec 31, 1999', 'Oct 2', 'May 31']: 
+            print s, '--> ', _yfd.date_atoymd(s)
+    
+        #get_caldendar_mmdd_offset(self, mmdd, offset):
+        for mmdd, offset in zip( 
+            ['12-31', '01-15', '05-31'],
+            ['90',    '45',    '91']
+            ):
+            print mmdd, '+', offset, o.get_caldendar_mmdd_offset(mmdd, offset)
+
+        #get_FY_quarter_ends(self, FY_end):
+        for fy_end in ['12-31', '01-15', '04-15', '08-01']:
+            print fy_end, ' ==> ', o.get_FY_quarter_ends(fy_end)
+
+    elif len(sys.argv) > 1 and sys.argv[1] == 'yfsector':
         '''
-        Script calls to download yahoo finance data
+        yahoofinance.py yfsector : testing class YFSector
         '''
 
-        if len(sys.argv) > 2 and sys.argv[2] == 'sector':
+        if len(sys.argv) > 2 and sys.argv[2] == 'wget':
             '''
-            Download yahoofinance sector info, 
-            yahoofinance.py wget sector 1   --> download industry# staring with 1
-            yahoofinance.py wget sector all --> download all industry#
-            yahoofinance.py wget sector     --> download all industry#
+            wget     --> download all yahoo finance indsutry'
+            wget 1   --> download yahoo finance indsutry 1xx
             ''' 
 
             sector = YFSector() 
@@ -1280,79 +1360,6 @@ if __name__ == "__main__":
         #for sym in ['CSCO', 'BRCD', 'ATEN', 'NMBL', 'ANET']: 
         #    o.update_stock_info(sym) 
         o.wget_sector_list()
-    # test - YFDate
-    elif len(sys.argv) > 1 and sys.argv[1] == 'yfdata': 
-        o = YFDate()
-
-        #def get_list_quarters(self, start_quarter, number, include_this=1)
-        print o.get_list_quarters('2001Q1', 10)
-        print o.get_list_quarters('2001Q1', 10, 0)
-        
-        #def get_month_weekday_number(self, date, format='text')
-        print o.get_month_weekday_number('2001-01-01')
-        print o.get_month_weekday_number('2015-01-10')
-        print o.get_month_weekday_number('2001-01-01', 'number')
-        print o.get_month_weekday_number('2015-01-10', 'number')
-
-        #def get_sp_day(self, date, mode='next'):
-        print 'first sp day: ', o.sp500_days[0]
-        print 'last sp day: ', o.sp500_days[-1]
-
-        print '!!!! 1980-01-01 !!!!'
-        print o.index_by_sp_day('1980-01-01')
-        print o.get_sp_day('1980-01-01')
-        print o.get_sp_day('1980-01-01', 'previous')
-
-        print '!!!! 2019-01-01 !!!!'
-        print o.index_by_sp_day('2019-01-01')
-        print o.get_sp_day('2019-01-01')
-        print o.get_sp_day('2019-01-01', 'previous')
-
-        print '!!!! first sp day !!!!'
-        print o.index_by_sp_day(o.sp500_days[0])
-        print o.get_sp_day(o.sp500_days[0])
-        print o.get_sp_day(o.sp500_days[0], 'previous')
-
-        print '!!!! last sp day !!!!'
-        print o.index_by_sp_day(o.sp500_days[-1])
-        print o.get_sp_day(o.sp500_days[-1])
-        print o.get_sp_day(o.sp500_days[-1], 'previous')
-
-        #def sp_day_diff(self, date1, date2):
-        for d1, d2 in zip(
-            [o.sp500_days[0], '2015-01-09', '2015-01-01'],
-            [o.sp500_days[-1], '2014-12-31', '2013-01-01']
-            ) :
-            print d1, '-', d2, ': ', o.sp_day_diff(d1, d2)
-
-        #def sp_day_offset(self, date, offset):
-        for offset in ['10', '-10', '+1w', '1w', '-1W', '+1M', '-1M', '3M', '-3M', '-2Y', '2Y']:
-            print '2015-01-02 ', offset, o.sp_day_offset('2015-01-02', offset)
-
-        #def number_sp_days(self, str):
-        for s in ['10d', '-10d', '10', '-10', '10W', '-10w', '10m', '-10M']:
-            print s, ': ', o.number_sp_days(s)
-
-        print 'get_month_range, 2013-11, 10', o.get_month_range('2013-11', '10')
-
-        for m in ['Jan', 'january', 'Feb', 'March', 'August', 'Ocx']:
-            print o.month_atoi(m)
-            print month_atoi(m)
-
-        for s in ['August 2, 2001', 'Dec 31, 1999', 'Oct 2', 'May 31']: 
-            print s, '--> ', o.date_atoymd(s)
-    
-        #get_caldendar_mmdd_offset(self, mmdd, offset):
-        for mmdd, offset in zip( 
-            ['12-31', '01-15', '05-31'],
-            ['90',    '45',    '91']
-            ):
-            print mmdd, '+', offset, o.get_caldendar_mmdd_offset(mmdd, offset)
-
-        #get_FY_quarter_ends(self, FY_end):
-        for fy_end in ['12-31', '01-15', '04-15', '08-01']:
-            print fy_end, ' ==> ', o.get_FY_quarter_ends(fy_end)
-
     elif len(sys.argv) > 1 and sys.argv[1] == 'index_by_sp_day': 
         print 'after sp_day of 2013-01-01: %s' % (od.sp500_days[od.index_by_sp_day('2013-01-01')])
         print 'prev  sp_day of 2013-01-01: %s' % (od.sp500_days[od.index_by_sp_day('2013-01-01', 'prev')])
