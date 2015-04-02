@@ -17,9 +17,9 @@ import time
 import datetime
 import sqlite3 as sql
 
-# all dates starting from 1993, including SP500 days, OE days, etc
-START_YEAR = 1993
-START_DATE = '1993-01-01'
+# all dates starting from 1950, when SP500 starts
+START_YEAR = 1950
+START_DATE = '1950-01-01'
 
 # LOCAL | yahoofinance
 DATA_SOURCE = 'yahoofinance'
@@ -31,6 +31,48 @@ YF_DB_FILE = '%s/yahoofinance.db' % SQL_DIR_PATH
 
 MY_LOG_FILE_NAME = '%s/yahoofinance.log' % BASE_DIR_PATH
 
+
+# --------------------------------------------------------------------------- #
+# Shared functions
+# --------------------------------------------------------------------------- #
+# def unit_to_number(unit): k/m/b to number
+# def convert_int(num_str, unit=''): '100,000K' -> 100000000
+# def convert_float(num_str): '1,999.99' -> 1999.99
+# def month_atoi(month_str): Jan -> 1, Feb -> 2
+# def date_atoymd(date_): 'Feb 20, 2012' -> 2012-02-02
+# --------------------------------------------------------------------------- #
+
+#
+# test shared functions
+#
+def test_shared_func(*args):
+    if len(args) < 2 or args[0] == 'usage':
+        print """yahoofinance.py test_share_func <command> <args>
+        unit_to_number <K|M|B>
+        convert_int    <number_str> [<unit:K|M|B>]
+        convert_float  <float_str>
+        month_atoi     <month: Jan|march>
+        date_atoymd    <date: Feb 20, 2012>
+        range_month    <start_ym: 2012-01> <number> [mode:increment|reverse]
+        """
+    else:
+        try: 
+            if args[0] == 'unit_to_number':
+                print unit_to_number(*args[1:])
+            elif args[0] == 'convert_int':
+                print convert_int(*args[1:])
+            elif args[0] == 'convert_float':
+                print convert_float(*args[1:])
+            elif args[0] == 'month_atoi':
+                print month_atoi(*args[1:])
+            elif args[0] == 'date_atoymd':
+                print date_atoymd(*args[1:])
+            elif args[0] == 'range_month':
+                print range_month(*args[1:])
+            else: 
+                test_shared_func('usage')
+        except:
+            test_shared_func('usage')
 
 #
 # unit to number, k/b/m
@@ -45,8 +87,6 @@ def unit_to_number(unit):
     else:
         return 1
 
-#
-#
 def convert_int(num_str, unit=''):
     """
     convert number string to number string in unit like K/M/B
@@ -83,12 +123,13 @@ def month_atoi(month_str):
             return i + 1
     return 0
     
-    # -----------------------------date_atoi --------------------------------- #
-def date_atoymd(date_text):
+def date_atoymd(date_):
     """
-    convert date string to YYYY-MM-DD or MM-DD formate
+    convert date string to YYYY-MM-DD or MM-DD formate, like
+    Feb 2, 2012 -> '2012-02-02'
+    Oct 30      -> '10-30', for Stock FY Ends
     """
-    a = re.search('^(\w+)\s+(\d+)[\s|,]+(\d{4})', date_text)
+    a = re.search('^(\w+)\s+(\d+)[\s|,]+(\d{4})', date_)
     if a: 
         return '%04d-%02d-%02d' % ( 
             int(a.group(3)), 
@@ -96,7 +137,7 @@ def date_atoymd(date_text):
             int(a.group(2))
             )
     
-    b = re.search('^(\w+)\s+(\d+)', date_text)
+    b = re.search('^(\w+)\s+(\d+)', date_)
     if b:
         return '%02d-%02d' % ( 
             month_atoi(b.group(1)), 
@@ -105,6 +146,41 @@ def date_atoymd(date_text):
     
     return '0000-00-00'
 
+def range_month(start_ym, number, mode='increment'):
+    '''
+    get range of months, e.g, 
+    (2011-01, 12) -> [2011-01, 2011-02,.....]
+    mode: incremental|reverse
+    '''
+
+    if type(number) is not int:
+        number = int(number)
+            
+    [year, month] = map(int, start_ym.split('-'))
+
+    list_month = [start_ym]
+
+    for i in range(number - 1): 
+        if mode == 'reverse': 
+            month -= 1 
+        else: 
+            month += 1
+
+        if month > 12: 
+            year += 1
+            month = 1
+
+        if month < 1:
+            year -= 1
+            month = 12
+
+        list_month.append('%04d-%02d' % (year, month))
+
+    return list_month
+
+# --------------------------------------------------------------------------- #
+# end of Shared functions
+# --------------------------------------------------------------------------- #
 
 YF_INSIDER = 1
 NONEWLINE = 2
@@ -227,6 +303,31 @@ class YFStock(YFDB):
         YFDB.__init__(self, 'Stock')
         self.debug = 1
 
+    def test(self, *args):
+        if len(args) < 2 or re.search('usage|help', args[0]):
+            print """yahoofinance.py test_yfstock <method> <args>
+            
+            get_stock_id      <ticker> e.g. get_stock_id YHOO
+            fetch_stock_info  <ticker> e.g. fetch_stock_info TSLA
+            wget_stock_info   <ticker> e.g. wget_stock_info OCLR
+            upsert_stock_info <ticker> e.g. upsert_stock_info OCLR
+            """
+        else: 
+            try: 
+                if args[0] == 'get_stock_id': 
+                    print self.get_stock_id(*args[1:])
+                elif args[0] == 'fetch_stock_info': 
+                    print self.fetch_stock_info(*args[1:])
+                elif args[0] == 'wget_stock_info': 
+                    print self.wget_stock_info(*args[1:])
+                elif args[0] == 'upsert_stock_info':
+                    print self.upsert_stock_info(*args[1:])
+                else:
+                    self.test('usage')
+            except:
+                raise
+                self.test('usage')
+
     def get_stock_id(self, ticker):
         return self.fetch_id("""
             SELECT StockID FROM Stock
@@ -241,7 +342,7 @@ class YFStock(YFDB):
         id = self.get_stock_id(ticker)
 
         if id == None:
-            self.insert_or_replace_stock_info(ticker)
+            self.upsert_stock_info(ticker)
 
         return self.get_stock_id(ticker)
 
@@ -261,14 +362,32 @@ class YFStock(YFDB):
 
         return self.cursor.fetchone() 
 
-    def insert_or_replace_stock_info(self, ticker):
+    # ----------------------------------------------------------------------- #
+    # CREATE TABLE Stock (
+    # StockID   integer primary key NOT NULL,  1)
+    # Ticker    char(10),                      2)
+    # Active    integer,   x                   3) -> default
+    # Name      text,      *                   4)
+    # FYEnds    text,      *                   5)
+    # Beta      real,      *                   6)
+    # HasOption integer,   x                   7)
+    # Close     real,      x                   8)
+    # AvgVol    integer,   *                   9)
+    # Shares    integer,   *                  10)
+    # Floating  integer,   *                  11)
+    # MarketCap integer,   *                  12)
+    # Start     text,      x                  13)
+    # End       text,      x                  14)
+    # );
+    # ----------------------------------------------------------------------- #
+    def upsert_stock_info(self, ticker):
         list_values = self.wget_stock_info(ticker)
 
         if list_values[1] != None: 
             self.cursor.execute("""
             INSERT OR REPLACE INTO Stock 
-            (StockID, Ticker, Active, Name, FYEnds, Beta, HasOption, Close,
-            AvgVol, Shares, Floating, MarketCap, Start, End) 
+            (StockID, Ticker, Active, Name, FYEnds, Beta, AvgVol, Shares, 
+            Floating, MarketCap) 
             VALUES ( 
             (SELECT StockID from Stock WHERE Ticker=? AND Active=1), 
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -278,30 +397,9 @@ class YFStock(YFDB):
 
             self.conn.commit()
 
-    # ----------------------------------------------------------------------- #
-    # get stock info from yahoo finance website
-    # ----------------------------------------------------------------------- #
-    # ----------------------------------------------------------------------- #
-    # CREATE TABLE Stock (
-    # StockID   integer primary key NOT NULL,
-    # Ticker    char(10),
-    # Active    integer
-    # Name      text,
-    # FYEnds    text,
-    # Beta      real,
-    # HasOption integer,
-    # Close     real,
-    # AvgVol    integer,
-    # Shares    integer,
-    # Floating  integer,
-    # MarketCap integer,
-    # Start     text,
-    # End       text,
-    # );
-    # ----------------------------------------------------------------------- #
     def wget_stock_info(self, ticker):
         """
-        Get all stock finance info from finance.yahoo.com, including company
+        Get all stock finance info from finance.yahoo.com, including
         name, FY ends, beta, Market Cap, etc.
         """
 
@@ -311,7 +409,8 @@ class YFStock(YFDB):
         # fetch stock info from table as default values
         # or use default values
         #
-        #(1, u'BRCD', u'Brocade Communications Systems, Inc.', u'Nov 1', 1.23, 0, 5189210, 5140, u'0000-00-00', u'0000-00-00')
+        #(1, u'BRCD', u'Brocade Communications Systems, Inc.', u'Nov 1', 1.23,\
+        # 0, 5189210, 5140, u'0000-00-00', u'0000-00-00')
         #
         row = self.fetch_stock_info(ticker, active)
 
@@ -765,14 +864,120 @@ class YFHistoryData(YFDB):
     daliy historic data from yahoofinance.com
     '''
     def __init__(self):
-        self.re_date = re.compile('^(\d\d\d\d-\d\d-\d\d)')
+        YFDB.__init__(self, 'DailyQuota')
+        self.re_date = re.compile('^(\d\d\d\d)-(\d\d)-(\d\d)')
+        self.debug = 1
         return
 
-    # ----------------------------------------------------------------------- #
-    def get(self, ticker='^GSPC'):
-        pass
+    def test(self, *args):
+        if len(args) < 2 or re.search('usage|help', args[0]):
+            print """yahoofinance.py test_yfhisdata <method> <args>
+            
+            wget   <ticker> [<end_ymd>] [<start_ymd>] e.g. wget YAHOO 2013-12-31 2013-01-01
+            get    <ticker> [<end_ymd>] [<start_ymd>]
+            delete <ticker> [<end_ymd>] [<start_ymd>]
+            """
 
-    def wget(self, ticker='^GSPC'):
+        else:
+            try: 
+                if args[0] == 'wget': 
+                    print self.wget(*args[1:])
+                elif args[0] == 'get': 
+                    print self.get(*args[1:])
+                elif args[0] == 'delete': 
+                    self.delete(*args[1:])
+                else:
+                    self.test('help')
+            except:
+                raise
+                #self.test('help')
+    
+    def get(self, ticker='^GSPC', end_ymd = '', start_ymd=''):
+        stock_id = YFStock().get_or_add_stock_id(ticker)
+
+        if stock_id: 
+            sql_cmd = """
+            SELECT * FROM DailyQuota WHERE StockID=%s 
+            """ % (stock_id)
+
+            if end_ymd != '':
+                sql_cmd += ' AND Date<="%s"' % end_ymd
+            if start_ymd != '':
+                sql_cmd += ' AND Date>="%s"' % start_ymd
+           
+            if self.debug: 
+                print 'sql command:', sql_cmd
+
+            self.cursor.execute(sql_cmd)
+
+            return self.cursor.fetchall()
+        
+        return None
+
+    # CREATE TABLE DailyQuota (
+    # StockID         integer NOT NULL,
+    # Date            char(10),
+    # Open            real,
+    # High            real,
+    # Low             real,
+    # Close           real,
+    # Volume          integer,
+    # AdjClose        real,
+    # Amount          real,
+    # ClosePertage    real,
+    # AverageVolum3M  integer,
+    # CorrelationSP3M real,
+    # PertSinceCYQtr  real,
+    # PertSinceFYQtr  real,
+    # PRIMARY KEY(StockID, Date),
+    # FOREIGN KEY(StockID)    REFERENCES Stock(StockID));
+    def insert(self, ticker, rows):
+        stock_id = YFStock().get_or_add_stock_id(ticker)
+
+        rows_ = []
+        for row in rows:
+            rows_.append([stock_id] + row.split(',') + [None]*6)
+
+        print rows_
+                
+        self.conn.executemany("""
+            INSERT INTO DailyQuota VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, tuple(rows_)
+            )
+        self.conn.commit()
+
+    def delete(self, ticker, end_ymd = '9999-99-99', start_ymd='0000-00-00'):
+        stock_id = YFStock().get_stock_id(ticker)
+
+        if stock_id:
+            sql_cmd = """
+            DELETE FROM DailyQuota WHERE StockID=%s 
+            """ % (stock_id)
+
+            if end_ymd != '':
+                sql_cmd += ' AND Date<="%s"' % end_ymd
+            if start_ymd != '':
+                sql_cmd += ' AND Date>="%s"' % start_ymd
+           
+            if self.debug: 
+                print 'sql command:', sql_cmd
+
+            result = self.cursor.execute(sql_cmd)
+            self.conn.commit()
+
+            if self.debug:
+                print '%d rows deleted - %s, %s-%s' % (result.rowcount, 
+                    ticker, start_ymd, end_ymd)
+
+            return result.rowcount
+
+        else: 
+            if self.debug:
+                print 'invalid ticker to delete - %s' % ticker
+
+            return 0
+
+    def wget(self, ticker='^GSPC', end_ymd = '', start_ymd=''):
         '''
         Get ticker's historical prices data from yahoo finance
         url: http://real-chart.finance.yahoo.com/table.csv?
@@ -785,43 +990,72 @@ class YFHistoryData(YFDB):
         e = end_day
         f = end_year
 
-        So, let's take an easy way: 1900-0-1 to 9999-12-1
+        So, let's take an easy way: 1900-0-1 to 9999-12-1, if no dates
+        specified. 
+
         url: http://real-chart.finance.yahoo.com/table.csv?
              s=%s&d=12&e=1&f=9999&g=d&a=0&b=1&c=1900&ignore=.csv
         '''
 
-        url_addr = 'http://real-chart.finance.yahoo.com/table.csv?s=%s' %\
-            ticker
-        parameters ='&d=12&e=1&f=9999&g=d&a=0&b=1&c=1900&ignore=.csv'
+        # assign a/b/c/d/e/f to default values in case no dates specfied
+        a, b, c = 0, 1, 1900
+        d, e, f = 12, 1, 9999
 
-        url = url_addr + parameters 
+        # assign c/a/b based on start_ymd
+        re1 = self.re_date.match(start_ymd)
+        if re1:
+            c, a, b = map(int, re1.groups())
+
+        # assign f/d/e based on end_ymd
+        re2 = self.re_date.match(end_ymd)
+        if re2:
+            f, d, e = map(int, re2.groups())
+       
+        params = urlencode({ 
+            's': ticker,
+            'a': a - 1,
+            'b': b,
+            'c': c,
+            'd': d - 1,
+            'e': e,
+            'f': f, 
+            'g': 'd', 
+            'ignore': '.csv', 
+        }) 
         
-        req = Request(url) 
+        url = 'http://ichart.yahoo.com/table.csv?%s' % params
+        req = Request(url)
         
         try: 
             response = urlopen(req) 
         except: 
-            print ('Error') 
-        else: 
-            data = str(response.read().decode('utf-8').strip())
-            for line in data.splitlines():
-                    # match the DATE in date line
-                    line_match = self.re_date.match(line)
+            print 'Error to wget yahoo historic quota for %s' % ticker
+        
+        data = str(response.read().decode('utf-8').strip()) 
+       
+        rows = []
+         
+        for line in data.splitlines(): 
+            # match the DATE in date line 
+            re3 = self.re_date.match(line)
 
-                    # if not match ^2014-01-01, skip this line
-                    if line_match:
-                        _date = line_match.group(1)
-                        
-                        if _date >= _start and _date <= _end:
-                            return_lines.append(line)
-        return return_lines
+            # if not match ^2014-01-01, skip this line
+            if re3: 
+                date_ = re3.group() 
+                
+                if (end_ymd == '' or date_ <= end_ymd) and \
+                    (start_ymd == '' or date_ >= start_ymd):
+                    rows.append(line)
+       
+        if len(rows): 
+            self.insert(ticker, rows)
 
 class YFDate:
     '''
     Yahoo Finance Date Class, colletion of procedures to process all kinds of 
     date related functions
     '''
-    def __init__(self, _date = ''):
+    def __init__(self, date_ = ''):
         self.weekdays = [
             'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun' 
             ]
@@ -833,26 +1067,63 @@ class YFDate:
             '1st', '2nd', '3rd', '4th', '5th'
             ]
 
-        # ------------------------------------------------------------------- #
-        # get today
-        # ------------------------------------------------------------------- #
-        _datetime = datetime.datetime.now() 
+        self.get_today()
+        self.get_oe_days()
 
-        self.year = _datetime.year
-        self.month = _datetime.month
-        self.day = _datetime.day
+    def test(self, *args):
+        if len(args) < 1 or re.search('usage|help', args[0]):
+            print """usage: yahoofinance.py test-yfdate <method> <args>
+        get_list_quarters <Quarter> <num_quarter> <0|1: includ_this> 
+        like: get_list_quarters 2001Q1 10 0
+        
+        get_month_weekday_number <Date> <formate:number|text> 
+        like: get_month_weekday_number 2015-03-01 number
+        
+        spday_index <date> 
+        """
+
+        elif args[0] == 'get_list_quarters': 
+            try: 
+                print self.get_list_quarters(args[1], int(args[2]), \
+                    int(args[3]))
+            except:
+                try: 
+                    print self.get_list_quarters(args[1], int(args[2]))
+                except: 
+                    self.test('help')
+
+        elif args[0] == 'get_month_weekday_number': 
+            try: 
+                print self.get_month_weekday_number(*args[1:])
+            except: 
+                self.test('help')
+
+        elif args[0] == 'spday_index': 
+            try: 
+                print self.spday_index(*args[1:])
+            except: 
+                self.test('help')
+        else:
+                self.test('help')
+
+    def get_today(self):
+        '''
+        get today
+        '''
+        date_time = datetime.datetime.now() 
+
+        self.year = date_time.year
+        self.month = date_time.month
+        self.day = date_time.day
 
         self.today_ymd = '%04d-%02d-%02d' % (self.year, self.month, self.day)
 
         self.today_ym = '%04d-%02d' % (self.year, self.month)
 
-        # sp500_days   -> all sp days in chronological order
-        self.sp500_days = []
-        #self.load_sp_days()
-
-        # ------------------------------------------------------------------- #
-        # get all OE days, 3rd friday of the mth
-        # ------------------------------------------------------------------- #
+    def get_oe_days(self):
+        '''
+        get all OE days, 3rd friday of the mth
+        '''
         self.oe_days = []
         for _year in range(START_YEAR, self.year+1):
             for _month in range(1,13):
@@ -868,14 +1139,14 @@ class YFDate:
 
                 self.oe_days.append("%04d-%02d-%02d" % (_year, _month, oe_day))
   
-
     # -------------------------- load_sp_days ------------------------------- #
     # load all sp500 trading days
     # ----------------------------------------------------------------------- #
     def load_sp_days(self):
-        yfhd = YFHistoryData()
+        self.sp500_days = []
+        hd = YFHistoryData()
 
-        for line in yfhd.get('^GSPC'): 
+        for line in hd.get('^GSPC'): 
             self.sp500_days.append(line.split(',')[0])
         
         self.sp500_days.reverse() 
@@ -904,12 +1175,11 @@ class YFDate:
 
         return _list_quarters
 
-    # -------------------- get_month_weekday_number ------------------------- #
-    # give date, return numbered week/weekday, like
-    # od.get_month_weekday_number('2001-01-04') 
-    # -> 2001:1:1:3, 1st wed of 2001/01
-    # ----------------------------------------------------------------------- #
     def get_month_weekday_number(self, date, format='text'):
+        '''
+        given date, return numbered week/weekday, like 
+        ('2001-01-04') -> 2001:1:1:3, 1st wed of 2001/01
+        '''
         date = date[:10]
         
         # get year/mth/day of date
@@ -927,56 +1197,58 @@ class YFDate:
         else: 
             return '%d:%02d:%d:%d' % (year, month, number_week, weekday)
 
-    # -------------------- get_month_weekday_number ------------------------- #
-    # index_by_sp_day: index of date the closest day in sp500_days
-    # mode: default is to find the next sp day (the next trading day)
     # ----------------------------------------------------------------------- #
-    def index_by_sp_day(self, _date, mode='next'):
-        # if _date in sp_days, just return index
-        if _date in self.sp500_days:
-            return self.sp500_days.index(_date)
+    def spday_index(self, date_, mode='next'):
+        '''
+        spday_index: index of date the closest day in sp500_days 
+        mode: default is to find the next sp day (the next trading day)
+        '''
+        # if date_ in sp_days, just return index
+        if date_ in self.sp500_days:
+            return self.sp500_days.index(date_)
         
-        # if _date earlier than first sp day, return 1st_sp_day
-        if _date < self.sp500_days[0]:
+        # if date_ earlier than first sp day, return 1st_sp_day
+        if date_ < self.sp500_days[0]:
             return 0
 
-        # if _date later than last sp day, return last_sp_day
-        if _date > self.sp500_days[-1]:
+        # if date_ later than last sp day, return last_sp_day
+        if date_ > self.sp500_days[-1]:
             return len(self.sp500_days) - 1
 
-        # if _date not in sp500_days, return the next sp day
-        _index = len(self.sp500_days) - 1
-        for i, __date in enumerate(self.sp500_days): 
-            if __date > _date:
+        # if date_ not in sp500_days, return the next sp day
+        index_ = len(self.sp500_days) - 1
+        for i, _date_ in enumerate(self.sp500_days): 
+            if _date_ > date_:
                 if mode == 'next':
-                    _index = i - 1
+                    index_ = i - 1
                 else:
-                    _index = i
+                    index_ = i
                 break
 
-        if _index < 0 :
-            _index = 0
+        if index_ < 0 :
+            index_ = 0
 
-        return _index
+        return index_
 
-    # -------------------------- get_sp_day ---------------------------------- #
-    # get_sp_day: given calendar date, return the closest sp trading day
-    # ------------------------------------------------------------------------ #
-    def get_sp_day(self, date, mode='next'):
-        return self.sp500_days[self.index_by_sp_day(date, mode)]
+    def spday_of(self, date_, mode='next'):
+        '''
+        get_sp_day: given calendar date, return the closest sp trading day
+        '''
+        return self.sp500_days[self.spday_index(date_, mode)]
 
-    # ------------------------------ sp_day ---------------------------------- #
-    # sp_day_diff: given 2 dates, return the sp trading days between
-    # ------------------------------------------------------------------------ #
-    def sp_day_diff(self, date1, date2):
-        return self.index_by_sp_day(date1) - self.index_by_sp_day(date2)
+    def spday_diff(self, date1, date2):
+        '''
+        spday_diff: given 2 dates, return the sp trading days between
+        '''
+        return self.spday_index(date1) - self.spday_index(date2)
     
-    # ------------------------------ sp_day ---------------------------------- #
-    # given date + offset, return sp trade day, like
-    # self.ofstsp_day('2013-01-01', '+10')
-    # ------------------------------------------------------------------------ #
-    def sp_day_offset(self, date, offset):
-        _index = self.index_by_sp_day(date) + int(self.number_sp_days(offset))
+    def spday_offset(self, date, offset):
+        '''
+        given date + offset, return sp trade day, e.g.
+        '2013-01-01', '+10' --> '2013-01-15'
+        '2013-02-28', '-10' --> '2013-02-14'
+        '''
+        _index = self.spday_index(date) + int(self.number_sp_days(offset))
 
         if _index < 0: 
             _index = 0
@@ -986,46 +1258,11 @@ class YFDate:
 
         return self.sp500_days[_index]
 
-    # ----------------------------- month_atoi ------------------------------- #
-    # return numberic month
-    # January: 1
     # ------------------------------------------------------------------------ #
-    def month_atoi(self, month_str):
-        for i, month in enumerate(self.list_months):
-            if re.match('^%s' % month.lower(), month_str.lower()):
-                return i + 1
-        return 0
-        
-    # -----------------------------date_atoi --------------------------------- #
-    # date_atoymd: convert test-formated date like "Mon 2, 2000" to YYYY-MM-DD 
-    # format. 2 appliations:
-    # 1) yahoo financ insider transaction: Dec 9, 2014 -> 2014-12-09
-    # 2) yahoo finance FY ends: Dec 31 -> 12-31
-    # ------------------------------------------------------------------------ #
-    def date_atoymd(self, date_text):
-        # Dec 9, 2014
-        a = re.search('^(\w+)\s+(\d+)[\s|,]+(\d{4})', date_text)
-        if a: 
-            return '%04d-%02d-%02d' % ( 
-                int(a.group(3)), 
-                self.month_atoi(a.group(1)), 
-                int(a.group(2))
-                )
-        
-        b = re.search('^(\w+)\s+(\d+)', date_text)
-        if b:
-            return '%02d-%02d' % ( 
-                self.month_atoi(b.group(1)), 
-                int(b.group(2))
-                )
-        
-        return '0000-00-00'
-
-    # ------------------------------------------------------------------------ #
-    # get_caldendar_mmdd_offset: given calendar date and offset like +30 days
+    # day_offset: given calendar date and offset like +30 days
     # like, 12-31 +90, 
     # ------------------------------------------------------------------------ #
-    def get_caldendar_mmdd_offset(self, mmdd, offset):
+    def day_offset_md(self, mmdd, offset):
         [month, day] = map(int, mmdd.split('-'))
         new_day = day + int(offset)
 
@@ -1040,7 +1277,7 @@ class YFDate:
                 
     # ------------------------------------------------------------------------ #
     # get_FY_quarter_ends: get the fiscal-year quarter-ends
-    # Input: FY_ends_date, like 12/31
+    # Input: FY_endsdate_, like 12/31
     # Oput: list of FQ/FY ends [03-31, 05-15, 08-15, 11-15]
     # FY+90day, Q+45days
     # ------------------------------------------------------------------------ #
@@ -1051,40 +1288,13 @@ class YFDate:
 
         for offset in [90, 45, 45, 45]:
             list_fquarter_ends.append(
-                self.get_caldendar_mmdd_offset(end_mmdd, offset)
+                self.day_offset(end_mmdd, offset)
                 )
 
-            end_mmdd = self.get_caldendar_mmdd_offset(end_mmdd, 90)
+            end_mmdd = self.day_offset(end_mmdd, 90)
 
         return list_fquarter_ends
 
-    # ------------------------------------------------------------------------ #
-    # get list of months, 
-    # input: 2011-01, 12
-    # output: 2011-01, 2011-02, ... 2011-12
-    # ------------------------------------------------------------------------ #
-    def get_month_range(self, start_ym, number, direction_mode='prev'):
-        [year, mth] = map(int, start_ym.split('-'))
-
-        list_month = [start_ym]
-
-        for i in range(int(number) - 1): 
-            if direction_mode == 'prev': 
-                mth -= 1 
-            else: 
-                mth += 1
-
-            if mth > 12: 
-                year += 1
-                mth = 1
-
-            if mth <  0:
-                year -= 1
-                mth = 12
-
-            list_month.append('%04d-%02d' % (year, mth))
-
-        return list_month
 
     # -------------------------------------------------------- #
     # return number of days, like 1m,1w,1d
@@ -1115,103 +1325,107 @@ class YFDate:
         return str(num_days)
 
 
-def top_usage():
+def usage():
     print '''
-usage: yahoofinance.py <command> [<args]>
+usage: yahoofinance.py <command> [<args>]
 
-The most commonly used yahoofinance commands are:
-   test-yfdate    Test class YFDate
-   test-yfsector  Test class YFSector
+The most commonly used yahoofinance commands are: 
+test-shared    Test shared functions 
+test-yfdate    Test class YFDate 
+test-yfstock   Test class YFStock
+test-yfhisdata Test class YFHistoryData()
+test-yfsector  Test class YFSector 
 
-See 'yahoofinance.py <command> help' for more informationon a specific command.'''
+See 'yahoofinance.py <command> help' for more informationon a specific command.
+'''
 
 
 if __name__ == "__main__":
 
-    if len(sys.argv) <= 1:
-        top_usage()
-    elif len(sys.argv) > 1 and sys.argv[1] == 'test-yfdate': 
-        _yfd = YFDate()
+    if len(sys.argv) < 2 or re.search('help|usage', sys.argv[1], 
+        flags=re.IGNORECASE):
+        usage()
 
-        if len(sys.argv) > 2 and sys.argv[2] == 'help':
-            print '''
-usage: yahoofinance.py test-yfdate <method_name> <args>
+    elif sys.argv[1] == 'test-shared': 
+        test_shared_func(*sys.argv[2:])
 
-yahoofinance.py test-yfdate get_list_quarters <Quarter> <num_quarter> <0|1: includ_this>
-like: get_list_quarters 2001Q1 10 0
+    elif sys.argv[1] == 'test-yfdate': 
+        d = YFDate()
+        d.test(*sys.argv[2:])
 
-yahoofinance.py test-yfdate get_month_weekday_number <Date> <formate:number|text>
-like: get_month_weekday_number 2015-03-01 number
-'''
-        #def get_list_quarters(self, start_quarter, number, include_this=1)
-        elif len(sys.argv) > 2 and sys.argv[2] == 'get_list_quarters':
-            print _yfd.get_list_quarters(*sys.argv[3:])
-        
+    elif sys.argv[1] == 'test-yfstock': 
+        s = YFStock()
+        s.test(*sys.argv[2:])
+
+    elif sys.argv[1] == 'test-yfhisdata': 
+        hd = YFHistoryData()
+        hd.test(*sys.argv[2:])
+
+    elif sys.argv[1] == 'test-xxxx': 
         #def get_month_weekday_number(self, date, format='text')
-        elif len(sys.argv) > 2 and sys.argv[2] == 'get_month_weekday_number':
-            print _yfd.get_month_weekday_number(*sys.argv[3:])
+        if len(sys.argv) > 2 and sys.argv[2] == 'get_month_weekday_number':
+            print d.get_month_weekday_number(*sys.argv[3:])
 
         elif len(sys.argv) > 2 and sys.argv[2] == 'sp500_days':
             try:
-                print 'sp500 day:', _yfd.sp500_days[int(sys.argv[3]]
+                print 'sp500 day:', _yfd.sp500_days[int(sys.argv[3])]
             except:
                 print 'incorrect range :', sys.argv[3]
 
         elif len(sys.argv) > 2 and sys.argv[2] == 'sp500_days':
-        print '!!!! 1980-01-01 !!!!'
-        print _yfd.index_by_sp_day('1980-01-01')
-        print _yfd.get_sp_day('1980-01-01')
-        print _yfd.get_sp_day('1980-01-01', 'previous')
-
-        print '!!!! 2019-01-01 !!!!'
-        print _yfd.index_by_sp_day('2019-01-01')
-        print _yfd.get_sp_day('2019-01-01')
-        print _yfd.get_sp_day('2019-01-01', 'previous')
-
-        print '!!!! first sp day !!!!'
-        print _yfd.index_by_sp_day(_yfd.sp500_days[0])
-        print _yfd.get_sp_day(_yfd.sp500_days[0])
-        print _yfd.get_sp_day(_yfd.sp500_days[0], 'previous')
-
-        print '!!!! last sp day !!!!'
-        print _yfd.index_by_sp_day(_yfd.sp500_days[-1])
-        print _yfd.get_sp_day(_yfd.sp500_days[-1])
-        print _yfd.get_sp_day(_yfd.sp500_days[-1], 'previous')
-
-        #def sp_day_diff(self, date1, date2):
-        for d1, d2 in zip(
-            [_yfd.sp500_days[0], '2015-01-09', '2015-01-01'],
-            [_yfd.sp500_days[-1], '2014-12-31', '2013-01-01']
-            ) :
-            print d1, '-', d2, ': ', _yfd.sp_day_diff(d1, d2)
-
-        #def sp_day_offset(self, date, offset):
-        for offset in ['10', '-10', '+1w', '1w', '-1W', '+1M', '-1M', '3M', '-3M', '-2Y', '2Y']:
-            print '2015-01-02 ', offset, _yfd.sp_day_offset('2015-01-02', offset)
-
-        #def number_sp_days(self, str):
-        for s in ['10d', '-10d', '10', '-10', '10W', '-10w', '10m', '-10M']:
-            print s, ': ', _yfd.number_sp_days(s)
-
-        print 'get_month_range, 2013-11, 10', _yfd.get_month_range('2013-11', '10')
-
-        for m in ['Jan', 'january', 'Feb', 'March', 'August', 'Ocx']:
-            print _yfd.month_atoi(m)
-            print month_atoi(m)
-
-        for s in ['August 2, 2001', 'Dec 31, 1999', 'Oct 2', 'May 31']: 
-            print s, '--> ', _yfd.date_atoymd(s)
+            pass
+            print '!!!! 1980-01-01 !!!!'
+            print _yfd.spday_index('1980-01-01')
+            print _yfd.get_sp_day('1980-01-01')
+            print _yfd.get_sp_day('1980-01-01', 'previous')
     
-        #get_caldendar_mmdd_offset(self, mmdd, offset):
-        for mmdd, offset in zip( 
-            ['12-31', '01-15', '05-31'],
-            ['90',    '45',    '91']
-            ):
-            print mmdd, '+', offset, o.get_caldendar_mmdd_offset(mmdd, offset)
-
-        #get_FY_quarter_ends(self, FY_end):
-        for fy_end in ['12-31', '01-15', '04-15', '08-01']:
-            print fy_end, ' ==> ', o.get_FY_quarter_ends(fy_end)
+            print '!!!! 2019-01-01 !!!!'
+            print _yfd.spday_index('2019-01-01')
+            print _yfd.get_sp_day('2019-01-01')
+            print _yfd.get_sp_day('2019-01-01', 'previous')
+    
+            print '!!!! first sp day !!!!'
+            print _yfd.spday_index(_yfd.sp500_days[0])
+            print _yfd.get_sp_day(_yfd.sp500_days[0])
+            print _yfd.get_sp_day(_yfd.sp500_days[0], 'previous')
+    
+            print '!!!! last sp day !!!!'
+            print _yfd.spday_index(_yfd.sp500_days[-1])
+            print _yfd.get_sp_day(_yfd.sp500_days[-1])
+            print _yfd.get_sp_day(_yfd.sp500_days[-1], 'previous')
+    
+            #def spday_diff(self, date1, date2):
+            for d1, d2 in zip(
+                [_yfd.sp500_days[0], '2015-01-09', '2015-01-01'],
+                [_yfd.sp500_days[-1], '2014-12-31', '2013-01-01']
+                ) :
+                print d1, '-', d2, ': ', _yfd.spday_diff(d1, d2)
+    
+            #def spday_offset(self, date, offset):
+            for offset in ['10', '-10', '+1w', '1w', '-1W', '+1M', '-1M', '3M', '-3M', '-2Y', '2Y']:
+                print '2015-01-02 ', offset, _yfd.spday_offset('2015-01-02', offset)
+    
+            #def number_sp_days(self, str):
+            for s in ['10d', '-10d', '10', '-10', '10W', '-10w', '10m', '-10M']:
+                print s, ': ', _yfd.number_sp_days(s)
+    
+            for m in ['Jan', 'january', 'Feb', 'March', 'August', 'Ocx']:
+                print _yfd.month_atoi(m)
+                print month_atoi(m)
+    
+            for s in ['August 2, 2001', 'Dec 31, 1999', 'Oct 2', 'May 31']: 
+                print s, '--> ', _yfd.date_atoymd(s)
+        
+            #day_offset(self, mmdd, offset):
+            for mmdd, offset in zip( 
+                ['12-31', '01-15', '05-31'],
+                ['90',    '45',    '91']
+                ):
+                print mmdd, '+', offset, o.day_offset(mmdd, offset)
+    
+            #get_FY_quarter_ends(self, FY_end):
+            for fy_end in ['12-31', '01-15', '04-15', '08-01']:
+                print fy_end, ' ==> ', o.get_FY_quarter_ends(fy_end)
 
     elif len(sys.argv) > 1 and sys.argv[1] == 'yfsector':
         '''
@@ -1238,7 +1452,7 @@ like: get_month_weekday_number 2015-03-01 number
             stock = YFStock()
 
             if len(sys.argv) > 3:
-                stock.insert_or_replace_stock_info(sys.argv[3])
+                stock.upsert_stock_info(sys.argv[3])
 
 
 
@@ -1252,25 +1466,6 @@ like: get_month_weekday_number 2015-03-01 number
         else:
             db = YFDB()
             db.pprint()
-
-    if len(sys.argv) > 1 and sys.argv[1] == 'stock': 
-        """
-        test class Stock()
-        """
-        stock = YFStock()
-
-        if len(sys.argv) > 2 and sys.argv[2] == 'wget':
-            tick = raw_input("ticker: ") 
-            stock.insert_or_replace_stock_info(tick)
-        elif len(sys.argv) > 2 and sys.argv[2] == 'fetch':
-            tick = raw_input("ticker: ") 
-            print stock.fetch_stock_info(tick)
-        elif len(sys.argv) > 2 and sys.argv[2] == 'id':
-            tick = raw_input("ticker: ") 
-            print stock.get_stock_id(tick)
-        else:
-            stock = Stock()
-            stock.pprint()
 
     if len(sys.argv) > 1 and sys.argv[1] == 'insider': 
         """
@@ -1360,29 +1555,3 @@ like: get_month_weekday_number 2015-03-01 number
         #for sym in ['CSCO', 'BRCD', 'ATEN', 'NMBL', 'ANET']: 
         #    o.update_stock_info(sym) 
         o.wget_sector_list()
-    elif len(sys.argv) > 1 and sys.argv[1] == 'index_by_sp_day': 
-        print 'after sp_day of 2013-01-01: %s' % (od.sp500_days[od.index_by_sp_day('2013-01-01')])
-        print 'prev  sp_day of 2013-01-01: %s' % (od.sp500_days[od.index_by_sp_day('2013-01-01', 'prev')])
-        print 'today is %s' % od.today
-        print 'today in yyyy-mm format is %s' % od.todayym
-        print 'mthwkday of 2013-10-17 is %s ' % od.mthwkday('2013-10-17')
-        print 'mthwkday of 2013-11-17 in y:m:# format is %s' % od.mthwkday('2013-11-17', 'no')
-        print od.mthwkday('2013-12-17')
-        print '2013-11-15' in od.oe_days
-        print 'last sp_day: %s' % od.last_sp500_day
-        print od.sp500_days[ od.index_by_sp_day('2013-01-01')]
-        print od.sp500_days[ od.index_by_sp_day('2013-01-01', 'prev')]
-        print od.sp_day('2013-01-01')
-        print od.ofstsp_day('2013-11-01', '+10')
-        print od.ofstsp_day('2013-11-01', '-10')
-        print od.parsedate1('Nov 2, 2009')
-        print od.parsedate1('Mar 21, 2011')
-        print od.get_month_range('2013-11', '3')
-        print od.number_sp_days('1w')
-        print od.number_sp_days('-1m')
-        print od.number_sp_days('+3m')
-        print od.number_sp_days('+6M')
-        print od.sp_daybtwn('2010-01-03', '2010-11-03')
-    elif len(sys.argv) > 1 and sys.argv[1] == 'index_by_sp_day': 
-        _i = od.index_by_sp_day(sys.argv[2], sys.argv[3])
-        print od.sp500_days[_i]
