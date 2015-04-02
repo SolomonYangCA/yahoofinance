@@ -54,6 +54,7 @@ def test_shared_func(*args):
         month_atoi     <month: Jan|march>
         date_atoymd    <date: Feb 20, 2012>
         range_month    <start_ym: 2012-01> <number> [mode:increment|reverse]
+        range_quarter  <start_quarter: 2012Q1> <number> <include_this=1>
         """
     else:
         try: 
@@ -69,6 +70,8 @@ def test_shared_func(*args):
                 print date_atoymd(*args[1:])
             elif args[0] == 'range_month':
                 print range_month(*args[1:])
+            elif args[0] == 'range_quarter':
+                print range_quarter(*args[1:])
             else: 
                 test_shared_func('usage')
         except:
@@ -101,13 +104,17 @@ def convert_int(num_str, unit=''):
 
     return int(i)
 
-def convert_float(num_str):
+def convert_float(float_str, default_value=-1.0):
     """
     convert float string to float after removing ','
     """
-    num_str = re.sub(',', '', num_str)
 
-    return float(num_str)
+    float_str = re.sub(',', '', float_str)
+
+    try:
+        return float(float_str)
+    except:
+        return default_value
 
 def month_atoi(month_str):
     """
@@ -146,7 +153,7 @@ def date_atoymd(date_):
     
     return '0000-00-00'
 
-def range_month(start_ym, number, mode='increment'):
+def range_month(start_ym, number, mode='forward'):
     '''
     get range of months, e.g, 
     (2011-01, 12) -> [2011-01, 2011-02,.....]
@@ -177,6 +184,36 @@ def range_month(start_ym, number, mode='increment'):
         list_month.append('%04d-%02d' % (year, month))
 
     return list_month
+
+def range_quarter(start_quarter, number, include_this=1):
+    '''
+    generate list of quarters, like od.range_quarter(2012Q1,12)
+    include_this = 1, means staring from the start_quarter
+    '''
+    # init var
+    _list_quarters = []
+    _year = int(start_quarter[0:4])
+    _quarter = int(start_quarter[5])
+
+    # if not include this quarter, quarter -1
+    if not include_this: 
+        _quarter -= 1
+
+    if type(number) is str:
+        number = int(number)
+
+    if type(include_this) is str:
+        include_this = int(include_this)
+
+    for i in range(number):
+        if _quarter <= 0: 
+            _quarter = 4
+            _year -= 1
+
+        _list_quarters.append('%04dQ%d' % (_year, _quarter))
+        _quarter -= 1
+
+    return _list_quarters
 
 # --------------------------------------------------------------------------- #
 # end of Shared functions
@@ -297,42 +334,57 @@ class YFDB:
 
 class YFStock(YFDB):
     """
-    Class YFStock: get stock info like name, FYEnds, beta, etc
+    Class YFStock: get stock info from finance.yahoo.com
     """
+
     def __init__(self):
         YFDB.__init__(self, 'Stock')
-        self.debug = 1
+        self.debug = 0
+
+        self.list_field_wget = ['Ticker', 'Name', 'FYEnds', 'Beta', 'AvgVol',
+            'Shares', 'Floating', 'MarketCap']
+
+        self.list_field_all = ['StockID', 'Ticker', 'Active', 'Name', 'FYEnds', 
+            'Beta', 'HasOption', 'Close', 'AvgVol', 'Shares', 'Floating', 
+            'MarketCap', 'Start', 'End']
 
     def test(self, *args):
         if len(args) < 2 or re.search('usage|help', args[0]):
             print """yahoofinance.py test_yfstock <method> <args>
             
-            get_stock_id      <ticker> e.g. get_stock_id YHOO
-            fetch_stock_info  <ticker> e.g. fetch_stock_info TSLA
-            wget_stock_info   <ticker> e.g. wget_stock_info OCLR
-            upsert_stock_info <ticker> e.g. upsert_stock_info OCLR
+            get_stock_id        <ticker> e.g. get_stock_id YHOO
+            fetch_stock_info    <ticker> e.g. fetch_stock_info TSLA
+            wget_stock_info     <ticker> e.g. wget_stock_info OCLR
+            upsert_stock_info   <ticker> e.g. upsert_stock_info OCLR
+            get_or_add_stock_id <ticker> e.g. get_or_add_stock_id OCLR
             """
         else: 
             try: 
                 if args[0] == 'get_stock_id': 
                     print self.get_stock_id(*args[1:])
                 elif args[0] == 'fetch_stock_info': 
-                    print self.fetch_stock_info(*args[1:])
+                    stock_info = self.fetch_stock_info(*args[1:])
+                    if stock_info: 
+                        self.pprint (self.list_field_all, stock_info)
+                    else:
+                        print stock_info
                 elif args[0] == 'wget_stock_info': 
                     print self.wget_stock_info(*args[1:])
                 elif args[0] == 'upsert_stock_info':
                     print self.upsert_stock_info(*args[1:])
+                elif args[0] == 'get_or_add_stock_id':
+                    print self.get_or_add_stock_id(*args[1:])
                 else:
                     self.test('usage')
             except:
                 raise
                 self.test('usage')
 
-    def get_stock_id(self, ticker):
+    def get_stock_id(self, ticker, active=1):
         return self.fetch_id("""
             SELECT StockID FROM Stock
-            WHERE Ticker=\"%s\"
-            """ % ticker
+            WHERE Ticker="%s" AND active=%d
+            """ % (ticker, active)
             )
 
     def get_or_add_stock_id(self, ticker):
@@ -363,129 +415,132 @@ class YFStock(YFDB):
         return self.cursor.fetchone() 
 
     # ----------------------------------------------------------------------- #
-    # CREATE TABLE Stock (
-    # StockID   integer primary key NOT NULL,  1)
-    # Ticker    char(10),                      2)
-    # Active    integer,   x                   3) -> default
-    # Name      text,      *                   4)
-    # FYEnds    text,      *                   5)
-    # Beta      real,      *                   6)
-    # HasOption integer,   x                   7)
-    # Close     real,      x                   8)
-    # AvgVol    integer,   *                   9)
-    # Shares    integer,   *                  10)
-    # Floating  integer,   *                  11)
-    # MarketCap integer,   *                  12)
-    # Start     text,      x                  13)
-    # End       text,      x                  14)
+    # CREATE TABLE Stock (                      No       Web
+    # StockID   integer primary key NOT NULL,   1)       
+    # Ticker    char(10) DEFAULT 'NA',          2)       x
+    # Active    integer  DEFAULT 0,             3)      
+    # Name      text     DEFAULT 'NA',          4)       x
+    # FYEnds    text     DEFAULT '12-31',       5)       x
+    # Beta      real     DEFAULT '-1.0',        6)       x
+    # HasOption integer  DEFAULT 0,             7)
+    # Close     real     DEFAULT 0.0,           8)
+    # AvgVol    integer  DEFAULT 0,             9)       x
+    # Shares    integer  DEFAULT 0,            10)       x
+    # Floating  integer  DEFAULT 0,            10)       x
+    # MarketCap integer  DEFAULT 0,            10)       x
+    # Start     text     DEFAULT '0000-00-00', 13)
+    # End       text     DEFAULT '0000-00-00'  14)
     # );
     # ----------------------------------------------------------------------- #
     def upsert_stock_info(self, ticker):
-        list_values = self.wget_stock_info(ticker)
+        list_value = self.wget_stock_info(ticker)
 
-        if list_values[1] != None: 
-            self.cursor.execute("""
-            INSERT OR REPLACE INTO Stock 
-            (StockID, Ticker, Active, Name, FYEnds, Beta, AvgVol, Shares, 
-            Floating, MarketCap) 
-            VALUES ( 
-            (SELECT StockID from Stock WHERE Ticker=? AND Active=1), 
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, 
-            ( [ticker] + list(list_values) )
+        stock_id = self.get_stock_id(ticker)
+
+        # if stock_id == None, just insert
+        if stock_id == None:
+            r = self.cursor.execute("""
+            INSERT INTO Stock 
+            (%s) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """ % ','.join(self.list_field_wget), list_value
+            )
+        else:
+            #ticker, name, fy_ends, beta, avg_vol, shares, floating, mkt_cap
+            r = self.cursor.execute("""
+            UPDATE Stock SET
+            Name=?, FYEnds=?, Beta=?, AvgVol=?, Shares=?, Floating=?, 
+            MarketCap=?
+            WHERE StockID=?""", ( tuple(list_value[1:]) + tuple([stock_id]) )
             )
 
-            self.conn.commit()
+        self.conn.commit()
+
+        return r.rowcount
 
     def wget_stock_info(self, ticker):
         """
         Get all stock finance info from finance.yahoo.com, including
         name, FY ends, beta, Market Cap, etc.
+        # StockID   integer primary key NOT NULL,   1)       
+        # Ticker    char(10) DEFAULT 'NA',          2)       x
+        # Active    integer  DEFAULT 0,             3)      
+        # Name      text     DEFAULT 'NA',          4)       x
+        # FYEnds    text     DEFAULT '12-31',       5)       x
+        # Beta      real     DEFAULT '-1.0',        6)       x
+        # HasOption integer  DEFAULT 0,             7)
+        # Close     real     DEFAULT 0.0,           8)
+        # AvgVol    integer  DEFAULT 0,             9)       x
+        # Shares    integer  DEFAULT 0,            10)       x
+        # Floating  integer  DEFAULT 0,            10)       x
+        # MarketCap integer  DEFAULT 0,            10)       x
+        # Start     text     DEFAULT '0000-00-00', 13)
+        # End       text     DEFAULT '0000-00-00'  14)
         """
 
-        # of course, from web, it is active
-        active = 1
+        # assign the default values
+        name = ticker
 
-        # fetch stock info from table as default values
-        # or use default values
+        _avg_vol = '0'
+        _fy_ends = 'Dec 31'
+        _beta = '-1.0'
+        _shares = '0'
+        _mkt_cap = '0'
+        _floating = '0'
+        
         #
         #(1, u'BRCD', u'Brocade Communications Systems, Inc.', u'Nov 1', 1.23,\
         # 0, 5189210, 5140, u'0000-00-00', u'0000-00-00')
         #
-        row = self.fetch_stock_info(ticker, active)
-
-        if self.debug: 
-            print 'fetch_stock_info@wget_stock_info:', row
-
-        if row:
-            id, _ticker, active, name, fy_ends, beta, has_option, close,     \
-            avg_vol, shares, floating, mkt_cap, start, end = row
-        else:
-            # if not exiting, assign the default value
-            id, _ticker, active, name, fy_ends, beta, has_option, close,     \
-            avg_vol, shares, floating, mkt_cap, start, end =                 \
-            \
-            0,   ticker, 1,    ticker, 'Dec 31',  -1, 0,          0.0,       \
-            0,       0,      0,        0, '0000-00-00','0000-00-00'
-        
-        _avg_vol, _shares, _floating, _mkt_cap, _beta, _fy_ends = map(str,   \
-        [avg_vol,  shares,  floating,  mkt_cap,  beta,  fy_ends])
 
         url = 'http://finance.yahoo.com/q/ks?s=%s+Key+Statistics' % ticker
         p = SimpleHTMLParser(url)
 
         # if not found ticker, reply [ticker + None * 9]
-        if re.search('There are no results for the given search term', 
+        if re.search('no results for the given search term', 
             p.html_text):
-            return [ticker] + [None] * 9
+            return [ticker] + [None] * 7
 
         for line in p.html_text.split('\n'):
             # |Fiscal Year Ends:|Dec 31
             _fy_ends = self.re('^\|Fiscal Year Ends:\|(.*)', line, _fy_ends)
 
             _avg_vol = self.re('^\|Avg Vol.*3 month.*\|(\S*)', line, _avg_vol)
-
             _mkt_cap = self.re('^\|Market Cap.*:\|\s*(\S+)', line, _mkt_cap)
-            
-            _shares = self.re('^\|Shares Outstanding.*:\|\s*(\S+)', line, \
-                _shares)
-      
+            _shares = self.re('^\|Shares Outs.*:\|\s*(\S+)', line, _shares)
             _floating = self.re('^\|Float:\|\s*(\S+)', line, _floating)
-      
+
             # |Beta:|1.47, N/A
             _beta = self.re('^\|Beta:\|\s*(\S+)', line, _beta)
 
             # <h2>Diana Shipping Inc. (DSX)</h2> 
             name = self.re('^\|(.*) \(%s\)' % ticker, line, name)
-           
+          
+        # convert info string to correct format
+        avg_vol = convert_int(re.sub('\,', '', _avg_vol))
         fy_ends = date_atoymd(_fy_ends)
         mkt_cap = convert_int(_mkt_cap, 'M')
-        avg_vol = convert_int(re.sub('\,', '', _avg_vol))
         shares = convert_int(_shares)
         floating = convert_int(_floating)
+        beta = convert_float(_beta, -1.0)
        
         name = unicode(name, errors='replace').strip()
 
-        if _beta == 'N/A':
-            beta = -1.0
-        else:
-            beta = convert_float(_beta)
 
         if self.debug:
-            print 'url@wget_stock_info:', url 
-            print 'stock info: ', 
+            print 'wget_stock_info, url - ', url 
+            self.pprint(self.list_field_wget, [ticker, name, fy_ends, beta, \
+                avg_vol, shares, floating, mkt_cap])
+
+        return ticker, name, fy_ends, beta, avg_vol, shares, floating, mkt_cap
+
+    def pprint(self, list_name, list_value):
+        for name, value in zip(list_name, list_value):
             try: 
-                print '||'.join(map(str, [ticker, name, active, fy_ends, beta,\
-                    has_option, close, avg_vol, shares, floating, mkt_cap,    \
-                    start, end]))
+                print '%10s:[%s]' % (name, value)
             except:
-                print '||'.join(map(str, [ticker, ticker, active, fy_ends, beta,\
-                    has_option, close, avg_vol, shares, floating, mkt_cap,    \
-                    start, end]))
-
-        return ticker, active, name, fy_ends, beta, has_option, close,        \
-            avg_vol, shares, floating, mkt_cap, start, end
-
+                print '%10s:[%s]' % (name, 'Corrupted value')
+        
 class YFInsider(YFDB):
     """
     Class for Insider info in yahoo finance
@@ -936,15 +991,18 @@ class YFHistoryData(YFDB):
 
         rows_ = []
         for row in rows:
-            rows_.append([stock_id] + row.split(',') + [None]*6)
+            rows_.append([stock_id] + row.split(','))
 
-        print rows_
-                
-        self.conn.executemany("""
-            INSERT INTO DailyQuota VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        r = self.conn.executemany("""
+            INSERT OR REPLACE INTO DailyQuota 
+            (StockID, Date, Open, High, Low, Close, Volume, AdjClose)
+            VALUES (?,?,?,?,?,?,?,?)
             """, tuple(rows_)
             )
+
         self.conn.commit()
+
+        return r.rowcount
 
     def delete(self, ticker, end_ymd = '9999-99-99', start_ymd='0000-00-00'):
         stock_id = YFStock().get_stock_id(ticker)
@@ -1048,7 +1106,9 @@ class YFHistoryData(YFDB):
                     rows.append(line)
        
         if len(rows): 
-            self.insert(ticker, rows)
+            return self.insert(ticker, rows)
+        else:
+            return 0
 
 class YFDate:
     '''
@@ -1071,40 +1131,29 @@ class YFDate:
         self.get_oe_days()
 
     def test(self, *args):
-        if len(args) < 1 or re.search('usage|help', args[0]):
+        if len(args) < 2 or re.search('usage|help', args[0]):
             print """usage: yahoofinance.py test-yfdate <method> <args>
-        get_list_quarters <Quarter> <num_quarter> <0|1: includ_this> 
-        like: get_list_quarters 2001Q1 10 0
+        range_quarter <Quarter> <num_quarter> <0|1: includ_this> 
+        like: range_quarter 2001Q1 10 0
         
         get_month_weekday_number <Date> <formate:number|text> 
         like: get_month_weekday_number 2015-03-01 number
         
         spday_index <date> 
         """
-
-        elif args[0] == 'get_list_quarters': 
-            try: 
-                print self.get_list_quarters(args[1], int(args[2]), \
-                    int(args[3]))
-            except:
-                try: 
-                    print self.get_list_quarters(args[1], int(args[2]))
-                except: 
-                    self.test('help')
-
-        elif args[0] == 'get_month_weekday_number': 
-            try: 
-                print self.get_month_weekday_number(*args[1:])
-            except: 
-                self.test('help')
-
-        elif args[0] == 'spday_index': 
-            try: 
-                print self.spday_index(*args[1:])
-            except: 
-                self.test('help')
+        
         else:
+            try: 
+                if args[0] == 'get_month_weekday_number': 
+                    print self.get_month_weekday_number(*args[1:])
+                elif args[0] == 'spday_index': 
+                    print self.spday_index(*args[1:])
+                else: 
+                    self.test('help')
+            except: 
+                raise
                 self.test('help')
+
 
     def get_today(self):
         '''
@@ -1150,30 +1199,6 @@ class YFDate:
             self.sp500_days.append(line.split(',')[0])
         
         self.sp500_days.reverse() 
-
-    # ------------------------ get_list_quarters ---------------------------- #
-    # generate list of quarters, like od.get_list_quarters(2012Q1,12)
-    # include_this = 1, means staring from the start_quarter
-    # ----------------------------------------------------------------------- #
-    def get_list_quarters(self, start_quarter, number_quarter, include_this=1):
-        # init var
-        _list_quarters = []
-        _year = int(start_quarter[0:4])
-        _quarter = int(start_quarter[5])
-
-        # if not include this quarter, quarter -1
-        if not include_this: 
-            _quarter -= 1
-
-        for i in range(number_quarter):
-            if _quarter <= 0: 
-                _quarter = 4
-                _year -= 1
-
-            _list_quarters.append('%04dQ%d' % (_year, _quarter))
-            _quarter -= 1
-
-        return _list_quarters
 
     def get_month_weekday_number(self, date, format='text'):
         '''
