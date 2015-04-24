@@ -45,23 +45,32 @@ MY_LOG_FILE_NAME = '%s/yahoofinance.log' % BASE_DIR_PATH
 #
 # test shared functions
 #
+# --------------------------------------------------------------------------- #
 def test_shared_func(*args):
-    if len(args) < 2 or args[0] == 'usage':
-        print """yahoofinance.py test_share_func <command> <args>
-        unit_to_number <K|M|B>
-        convert_int    <number_str> [<unit:K|M|B>]
-        convert_float  <float_str>
-        month_atoi     <month: Jan|march>
-        date_atoymd    <date: Feb 20, 2012>
-        range_month    <start_ym: 2012-01> <number> [mode:increment|reverse]
-        range_quarter  <start_quarter: 2012Q1> <number> <include_this=1>
+    if len(args) < 1 or args[0] == 'usage':
+        print """yahoofinance.py test-shared <command> <args>
+        unit_to_number     <K|M|B>
+        convert_int        <number_str> [<unit:K|M|B>]
+        convert_int_all    1000K, 1000K in M, and integer 10, etc
+        convert_float      <float_str>
+        month_atoi         <month: Jan|march>
+        date_atoymd        <date: Feb 20, 2012>
+        range_month        <start_ym: 2012-01> <number> [forward|backward]
+        range_quarter      <start_quarter: 2012Q1> <number> <include_this=1>
+        pprint_name_value  <"name1:name2.." "value1:valu2..."
         """
     else:
-        try: 
+        try:
             if args[0] == 'unit_to_number':
                 print unit_to_number(*args[1:])
             elif args[0] == 'convert_int':
                 print convert_int(*args[1:])
+            elif args[0] == 'convert_int_all':
+                print '1000K:', convert_int('1000K')
+                print '1000K in M:', convert_int('1000K', 'm')
+                print 'int/10:', convert_int(10)
+                print 'int/-10:', convert_int(-10)
+                print 'float/-10.9:', convert_int(-10.9)
             elif args[0] == 'convert_float':
                 print convert_float(*args[1:])
             elif args[0] == 'month_atoi':
@@ -72,14 +81,18 @@ def test_shared_func(*args):
                 print range_month(*args[1:])
             elif args[0] == 'range_quarter':
                 print range_quarter(*args[1:])
+            elif args[0] == 'pprint_name_value':
+                pprint_name_value(args[1].split(':'), args[2].split(':'))
             else: 
                 test_shared_func('usage')
         except:
+            raise
             test_shared_func('usage')
 
 #
 # unit to number, k/b/m
 #
+# --------------------------------------------------------------------------- #
 def unit_to_number(unit):
     if unit.lower() == 'k':
         return 1000
@@ -90,20 +103,35 @@ def unit_to_number(unit):
     else:
         return 1
 
-def convert_int(num_str, unit=''):
+# --------------------------------------------------------------------------- #
+def convert_int(input_, unit=''):
     """
-    convert number string to number string in unit like K/M/B
+    1) convert number string to number string in unit like K/M/B, like
+       ('100,000K'), ('1.2M'), ('10000', 'k')
+    2) input may be an integer itself, just return it. This is some
+       functions argument
     """
-    num_str = re.sub(',', '', num_str)
-    a = re.search('([\d|\.]+)([kmb]{0,1})', num_str.lower())
+    if type(input_) is int:
+        return input_
+       
+    if type(input_) is str:
+                
+        input_ = re.sub(',', '', input_)
+        a = re.search('([\d|\.]+)([kmb]{0,1})', input_.lower())
+    
+        i = 0
+        if a:
+            try: 
+                i = 0.5 + (float(a.group(1)) * unit_to_number(a.group(2)) \
+                    / unit_to_number(unit)) 
+                return int(i)
+            except:
+                return 0
 
-    i = 0
-    if a:
-        i = 0.5 + (float(a.group(1)) * unit_to_number(a.group(2)) \
-        / unit_to_number(unit))
+    # if reach here, either not string, or corrupt string
+    return 0
 
-    return int(i)
-
+# --------------------------------------------------------------------------- #
 def convert_float(float_str, default_value=-1.0):
     """
     convert float string to float after removing ','
@@ -116,6 +144,7 @@ def convert_float(float_str, default_value=-1.0):
     except:
         return default_value
 
+# --------------------------------------------------------------------------- #
 def month_atoi(month_str):
     """
     convert month string to digital
@@ -130,7 +159,8 @@ def month_atoi(month_str):
             return i + 1
     return 0
     
-def date_atoymd(date_):
+# --------------------------------------------------------------------------- #
+def date_atoymd(date_, default_value='0000-00-00'):
     """
     convert date string to YYYY-MM-DD or MM-DD formate, like
     Feb 2, 2012 -> '2012-02-02'
@@ -151,27 +181,35 @@ def date_atoymd(date_):
             int(b.group(2))
             )
     
-    return '0000-00-00'
+    return default_value
 
-def range_month(start_ym, number, mode='forward'):
+# --------------------------------------------------------------------------- #
+def range_month(start_ym, number, mode='forward', include_this=1):
     '''
     get range of months, e.g, 
     (2011-01, 12) -> [2011-01, 2011-02,.....]
+    (2011-01, 12, 'backward', 1) -> [2009-01, 2009-02,.....2011-01]
     mode: incremental|reverse
     '''
 
-    if type(number) is not int:
-        number = int(number)
-            
-    [year, month] = map(int, start_ym.split('-'))
+    number = convert_int(number)
+    include_this = convert_int(include_this)
 
-    list_month = [start_ym]
+    # split start_ym to year, month, if failed, return [] since invalid input
+    try: 
+        [year, month] = map(int, start_ym.split('-'))
+    except:
+        return []
 
-    for i in range(number - 1): 
-        if mode == 'reverse': 
-            month -= 1 
+    if include_this: 
+        list_month = [start_ym]
+        number -= 1
+
+    for i in range(number): 
+        if mode == 'forward': 
+            month += 1 
         else: 
-            month += 1
+            month -= 1
 
         if month > 12: 
             year += 1
@@ -183,38 +221,47 @@ def range_month(start_ym, number, mode='forward'):
 
         list_month.append('%04d-%02d' % (year, month))
 
-    return list_month
+    return sorted(list_month)
 
+# --------------------------------------------------------------------------- #
 def range_quarter(start_quarter, number, include_this=1):
     '''
     generate list of quarters, like od.range_quarter(2012Q1,12)
     include_this = 1, means staring from the start_quarter
     '''
+
+    number = convert_int(number)
+    include_this = convert_int(include_this)
+    
     # init var
-    _list_quarters = []
-    _year = int(start_quarter[0:4])
-    _quarter = int(start_quarter[5])
+    list_quarters = []
+    year = int(start_quarter[0:4])
+    quarter = int(start_quarter[5])
 
     # if not include this quarter, quarter -1
     if not include_this: 
-        _quarter -= 1
-
-    if type(number) is str:
-        number = int(number)
-
-    if type(include_this) is str:
-        include_this = int(include_this)
+        quarter -= 1
 
     for i in range(number):
-        if _quarter <= 0: 
-            _quarter = 4
-            _year -= 1
+        if quarter <= 0: 
+            quarter = 4
+            year -= 1
 
-        _list_quarters.append('%04dQ%d' % (_year, _quarter))
-        _quarter -= 1
+        list_quarters.append('%04dQ%d' % (year, quarter))
+        quarter -= 1
 
-    return _list_quarters
+    return list_quarters
 
+# --------------------------------------------------------------------------- #
+def pprint_name_value(list_name, list_value):
+    max_len = len(max(list_name, key=len))
+    
+    for name, value in zip(list_name, list_value): 
+        try: 
+            print '%*s : [%s]' % (max_len, name, value) 
+        except: 
+            print '%*s : [%s]' % (max_len, name, 'corrupted') 
+        
 # --------------------------------------------------------------------------- #
 # end of Shared functions
 # --------------------------------------------------------------------------- #
@@ -228,6 +275,7 @@ class SimpleHTMLParser:
     * YF_INISDER: reading yahoofinance insider info to get url of form 4
     * NONEWLINE:  not used now
     """
+    # ----------------------------------------------------------------------- #
     def __init__(self, url, flag=NONEWLINE):
         self.NONEWLINE = 2
 
@@ -237,6 +285,7 @@ class SimpleHTMLParser:
         self.list_url = []
         self.read_and_parse()
 
+    # ----------------------------------------------------------------------- #
     def read_and_parse(self): 
         req = Request(self.url) 
         
@@ -250,7 +299,7 @@ class SimpleHTMLParser:
             self.raw_data = response.read().strip()
         
         if self.flag & self.NONEWLINE:
-            self.raw_data = re.sub('[\n|\r]', '', self.raw_data) 
+            self.raw_data = re.sub('[\n|\r]', ' ', self.raw_data) 
        
         # remove <sup>6</sup>
         self.raw_data = re.sub('<sup>\d+</sup>', '', self.raw_data)
@@ -293,13 +342,15 @@ class SimpleHTMLParser:
             if not line == '': 
                 self.html_text += line
 
-class MyLog:
+class Log:
     """
     Write log entry to file
     """
+    # ----------------------------------------------------------------------- #
     def __init__(self):
         self.log_file_name = MY_LOG_FILE_NAME
 
+    # ----------------------------------------------------------------------- #
     def write(self, message):
         with open(self.log_file_name, 'w+') as f:
             f.write('%s: %s\n' % (datetime.datetime.now(), message))
@@ -312,17 +363,20 @@ class YFDB:
     * class Stock: table Stock
     """
 
+    # ----------------------------------------------------------------------- #
     def __init__(self, table="Stock"):
         self.conn = sql.connect(YF_DB_FILE)
         self.cursor = self.conn.cursor()
         self.table = table
 
+    # ----------------------------------------------------------------------- #
     def pprint(self):
         sql_cmd = "SELECT * FROM %s" % self.table
         self.cursor.execute(sql_cmd)
         for row in self.cursor.fetchall():
             print row
 
+    # ----------------------------------------------------------------------- #
     def fetch_id(self, sql_code):
         self.cursor.execute(sql_code)
         
@@ -337,6 +391,7 @@ class YFStock(YFDB):
     Class YFStock: get stock info from finance.yahoo.com
     """
 
+    # ----------------------------------------------------------------------- #
     def __init__(self):
         YFDB.__init__(self, 'Stock')
         self.debug = 0
@@ -348,12 +403,13 @@ class YFStock(YFDB):
             'Beta', 'HasOption', 'Close', 'AvgVol', 'Shares', 'Floating', 
             'MarketCap', 'Start', 'End']
 
+    # ----------------------------------------------------------------------- #
     def test(self, *args):
         if len(args) < 2 or re.search('usage|help', args[0]):
             print """yahoofinance.py test_yfstock <method> <args>
             
             get_stock_id        <ticker> e.g. get_stock_id YHOO
-            fetch_stock_info    <ticker> e.g. fetch_stock_info TSLA
+            get_stock_info    <ticker> e.g. get_stock_info TSLA
             wget_stock_info     <ticker> e.g. wget_stock_info OCLR
             upsert_stock_info   <ticker> e.g. upsert_stock_info OCLR
             get_or_add_stock_id <ticker> e.g. get_or_add_stock_id OCLR
@@ -362,10 +418,10 @@ class YFStock(YFDB):
             try: 
                 if args[0] == 'get_stock_id': 
                     print self.get_stock_id(*args[1:])
-                elif args[0] == 'fetch_stock_info': 
-                    stock_info = self.fetch_stock_info(*args[1:])
+                elif args[0] == 'get_stock_info': 
+                    stock_info = self.get_stock_info(*args[1:])
                     if stock_info: 
-                        self.pprint (self.list_field_all, stock_info)
+                        pprint_name_value(self.list_field_all, stock_info)
                     else:
                         print stock_info
                 elif args[0] == 'wget_stock_info': 
@@ -380,6 +436,7 @@ class YFStock(YFDB):
                 raise
                 self.test('usage')
 
+    # ----------------------------------------------------------------------- #
     def get_stock_id(self, ticker, active=1):
         return self.fetch_id("""
             SELECT StockID FROM Stock
@@ -387,6 +444,7 @@ class YFStock(YFDB):
             """ % (ticker, active)
             )
 
+    # ----------------------------------------------------------------------- #
     def get_or_add_stock_id(self, ticker):
         """
         return StockID of ticker. If not existing, add it to DB
@@ -398,6 +456,7 @@ class YFStock(YFDB):
 
         return self.get_stock_id(ticker)
 
+    # ----------------------------------------------------------------------- #
     def re(self, re_str, line, default=0):
         found = re.match(re_str, line)
         if found:
@@ -405,7 +464,8 @@ class YFStock(YFDB):
         else:
             return default
 
-    def fetch_stock_info(self, ticker, active=1):
+    # ----------------------------------------------------------------------- #
+    def get_stock_info(self, ticker, active=1):
         #SELECT StockID, Ticker, Name, FYEnds, Beta, 
         #HasOption, AvgVol, MarketCap, Start, End 
         self.cursor.execute("""
@@ -435,6 +495,12 @@ class YFStock(YFDB):
     def upsert_stock_info(self, ticker):
         list_value = self.wget_stock_info(ticker)
 
+        if list_value[1] == None or (list_value[1] == 'NA' and 
+            list_value[-1] == 0):
+            if self.debug:
+                print 'failed to get stock info or invalid ticker - %s' % ticker
+            return 0
+
         stock_id = self.get_stock_id(ticker)
 
         # if stock_id == None, just insert
@@ -458,6 +524,7 @@ class YFStock(YFDB):
 
         return r.rowcount
 
+    # ----------------------------------------------------------------------- #
     def wget_stock_info(self, ticker):
         """
         Get all stock finance info from finance.yahoo.com, including
@@ -479,7 +546,7 @@ class YFStock(YFDB):
         """
 
         # assign the default values
-        name = ticker
+        name = 'NA'
 
         _avg_vol = '0'
         _fy_ends = 'Dec 31'
@@ -518,7 +585,7 @@ class YFStock(YFDB):
           
         # convert info string to correct format
         avg_vol = convert_int(re.sub('\,', '', _avg_vol))
-        fy_ends = date_atoymd(_fy_ends)
+        fy_ends = date_atoymd(_fy_ends, '12-31')
         mkt_cap = convert_int(_mkt_cap, 'M')
         shares = convert_int(_shares)
         floating = convert_int(_floating)
@@ -529,26 +596,21 @@ class YFStock(YFDB):
 
         if self.debug:
             print 'wget_stock_info, url - ', url 
-            self.pprint(self.list_field_wget, [ticker, name, fy_ends, beta, \
+            pprint_name_value(self.list_field_wget, [ticker, name, fy_ends, beta, \
                 avg_vol, shares, floating, mkt_cap])
 
         return ticker, name, fy_ends, beta, avg_vol, shares, floating, mkt_cap
 
-    def pprint(self, list_name, list_value):
-        for name, value in zip(list_name, list_value):
-            try: 
-                print '%10s:[%s]' % (name, value)
-            except:
-                print '%10s:[%s]' % (name, 'Corrupted value')
-        
 class YFInsider(YFDB):
     """
     Class for Insider info in yahoo finance
     """
+    # ----------------------------------------------------------------------- #
     def __init__(self):
         YFDB.__init__(self, "Insider")
         self.debug = 0
 
+    # ----------------------------------------------------------------------- #
     def get_or_add_insider_id(self, name, form_url): 
         id = self.get_insider_id(name, form_url)
 
@@ -557,6 +619,7 @@ class YFInsider(YFDB):
             id = self.get_insider_id(name, form_url)
         return id
 
+    # ----------------------------------------------------------------------- #
     def add_insider_id(self, name, form_url): 
         if not self.get_insider_id(name, form_url): 
             self.cursor.execute("""
@@ -567,6 +630,7 @@ class YFInsider(YFDB):
                 ) 
             self.conn.commit()
    
+    # ----------------------------------------------------------------------- #
     def get_insider_id(self, name, form_url): 
         return self.fetch_id("""
             SELECT InsiderID FROM Insider 
@@ -574,6 +638,7 @@ class YFInsider(YFDB):
             """ % (name, form_url)
             )
        
+    # ----------------------------------------------------------------------- #
     def delete_insider_by_id(self, id):
         if id == None:
             self.cursor.execute("""
@@ -588,10 +653,12 @@ class YFInsider(YFDB):
         self.conn.commit()
 
 class YFInsiderTransaction(YFDB):
+    # ----------------------------------------------------------------------- #
     def __init__(self):
         YFDB.__init__(self, "InsiderTrans")
         self.debug = 1
 
+    # ----------------------------------------------------------------------- #
     def parse_transaction(self, transaction): 
         """
         Parse transactions from yahoo finance, examples: 
@@ -624,6 +691,7 @@ class YFInsiderTransaction(YFDB):
         # return trans and price in string formate
         return [trans, price]
 
+    # ----------------------------------------------------------------------- #
     # WAECHTER THOMAS H ; Officer 
     def parse_insider(self, insider): 
         [name, title] = [insider, 'N/A'] 
@@ -638,6 +706,7 @@ class YFInsiderTransaction(YFDB):
             print '[%s] -> [%s], [%s]' % (insider, name, title) 
         return [name, title]
 
+    # ----------------------------------------------------------------------- #
     def wget_insider_transaction(self, ticker): 
         stock_id = YFStock().get_or_add_stock_id(ticker)
 
@@ -686,6 +755,7 @@ class YFInsiderTransaction(YFDB):
 
         self.update_insider_trans(rows_to_add)
 
+    # ----------------------------------------------------------------------- #
     # CREATE TABLE InsiderTrans(
     # StockID     integer NOT NULL,
     # InsiderID   integer NOT NULL,
@@ -701,6 +771,7 @@ class YFInsiderTransaction(YFDB):
     #
     # rows_to_add.append((stock_id, insider_id, role, date, trans, price, 
     #            shares, value))
+    # ----------------------------------------------------------------------- #
     def update_insider_trans(self, rows_to_add):
 
         _rows_to_add = []
@@ -742,6 +813,7 @@ class Sector(YFDB):
         self.tickers_in_source_sector_industry = {}
 
 
+    # ----------------------------------------------------------------------- #
     def get_source_id(self, name):
         id = self.fetch_id("""
             SELECT SourceID FROM Source WHERE Name='%s' 
@@ -755,6 +827,7 @@ class Sector(YFDB):
                 )
         return id
 
+    # ----------------------------------------------------------------------- #
     def add_source(self, name, description=''):
         self.cursor.execute("""
             INSERT INTO Source(Name, Description) 
@@ -764,6 +837,7 @@ class Sector(YFDB):
             ) 
         self.conn.commit()
    
+    # ----------------------------------------------------------------------- #
     def get_sector_id(self, name):
         id = self.fetch_id("""
             SELECT SectorID FROM Sector WHERE Name='%s'
@@ -777,6 +851,7 @@ class Sector(YFDB):
                 )
         return id
 
+    # ----------------------------------------------------------------------- #
     def add_sector(self, name, description=''):
         self.cursor.execute("""
             INSERT INTO Sector(Name, Description) 
@@ -786,6 +861,7 @@ class Sector(YFDB):
             ) 
         self.conn.commit()
    
+    # ----------------------------------------------------------------------- #
     def get_industry_id(self, name):
         id = self.fetch_id("""
             SELECT IndustryID FROM Industry WHERE Name='%s'
@@ -799,6 +875,7 @@ class Sector(YFDB):
                 )
         return id
 
+    # ----------------------------------------------------------------------- #
     def add_industry(self, name, description=''):
         self.cursor.execute("""
             INSERT INTO Industry(Name, Description) 
@@ -808,6 +885,7 @@ class Sector(YFDB):
             ) 
         self.conn.commit()
    
+    # ----------------------------------------------------------------------- #
     def load_db(self):
         '''
         load table - YFSector into dictionaries
@@ -825,12 +903,34 @@ class YFSector(Sector):
     class YFSector: download and api to access yahoo finance sector info
     """
 
+    # ----------------------------------------------------------------------- #
     def __init__(self):
         Sector.__init__(self)
         self.source = 'YF'
         self.source_id = self.get_source_id(self.source)
-        self.debug = 0
+        self.debug = 1
 
+    def test(self, *args):
+        if len(args) < 1 or re.search('usage|help', args[0]):
+            print """yahoofinance.py test-yfsector <method> <args>
+            
+            wget_industry_summary   : get list of yhaoo finance ind codes
+            wget_industry  <code>   : get yahoo finance industry info
+            """
+        else: 
+            try: 
+                if args[0] == 'wget_industry_summary': 
+                    print '\n'.join(self.wget_industry_summary(*args[1:]))
+                elif args[0] == 'wget_industry': 
+                    self.wget_industry(*args[1:])
+                else:
+                    self.test('usage')
+            except:
+                raise
+                self.test('usage')
+        pass
+
+    # ----------------------------------------------------------------------- #
     def re(self, re_str, line, default=0):
         found = re.match(re_str, line)
         if found:
@@ -838,33 +938,32 @@ class YFSector(Sector):
         else:
             return default
 
-    def wget_sector_industry_sum(self, sector_1st_num='all'): 
+    # ----------------------------------------------------------------------- #
+    def wget_industry_summary(self, sector_1st_num='all'): 
         """
-        Read thru Yahoo Finance Sector/Industry Summary Page at 
-        http://biz.yahoo.com/p/sum_conameu.html, and get the industry
-        homepage
+        Read all industry code from Yahoo Finance Industry Summary Page at 
+        http://biz.yahoo.com/p/sum_conameu.html
         """
+
+        list_code = []
 
         url = 'http://biz.yahoo.com/p/sum_conameu.html' 
         p = SimpleHTMLParser(url) 
        
         if p.html_text == 'Error':
-            return
+            return 
 
-        for _url in p.list_url: 
-            if sector_1st_num == 'all':
-                search_pattern = '^\d+conameu.html'
-            else:
-                search_pattern = '^%s\d+conameu.html' % sector_1st_num
+        for url_ in p.list_url: 
+            a = re.search('^(\d+)conameu.html', url_)
 
-            if re.search(search_pattern, _url): 
-                ind_url = 'http://biz.yahoo.com/p/%s' % _url 
+            if a:
+                list_code.append(a.group(1))
 
-                if self.debug: 
-                    print 'yahoofinance industry url: ', ind_url
-                self.wget_industry(ind_url)
+        return list_code
+    # ----------------------------------------------------------------------- #
+    def wget_industry(self, code): 
+        url = 'http://biz.yahoo.com/p/%dconameu.html' % convert_int(code)
 
-    def wget_industry(self, url): 
         sector, industry = '', ''
         stock_list = []
         
@@ -874,8 +973,9 @@ class YFSector(Sector):
             return 
         
         for line in p.html_text.split('\n'): 
-            sector = self.re('^\|.*Sector:\s*([^|]+)', line, sector)
+            sector = self.re('^\|.*Sector:\s*([^||^\(]+)', line, sector)
             industry = self.re('^\|.*Industry:\s*([^|(]+)', line, industry)
+
             stock_found = re.search('^\|.*[^|]+\(([A-Z ]+)\).*\|', line) 
             
             if stock_found: 
@@ -883,9 +983,11 @@ class YFSector(Sector):
                 
 
         if self.debug: 
+            print 'url: %s\n' % url
+            print p.html_text
             print 'sector:', sector 
             print 'industry:', industry 
-            print 'stocks list:', stock_list
+            print 'stocks list:\n', '\n'.join(stock_list)
 
         if sector != '' and industry != '' and len(stock_list):
             rows = []
@@ -918,17 +1020,19 @@ class YFHistoryData(YFDB):
     Yahoofinance Historic Date Class, download, store and read stock
     daliy historic data from yahoofinance.com
     '''
+    # ----------------------------------------------------------------------- #
     def __init__(self):
         YFDB.__init__(self, 'DailyQuota')
         self.re_date = re.compile('^(\d\d\d\d)-(\d\d)-(\d\d)')
         self.debug = 1
         return
 
+    # ----------------------------------------------------------------------- #
     def test(self, *args):
-        if len(args) < 2 or re.search('usage|help', args[0]):
+        if len(args) < 1 or re.search('usage|help', args[0]):
             print """yahoofinance.py test_yfhisdata <method> <args>
             
-            wget   <ticker> [<end_ymd>] [<start_ymd>] e.g. wget YAHOO 2013-12-31 2013-01-01
+            wget   <ticker>
             get    <ticker> [<end_ymd>] [<start_ymd>]
             delete <ticker> [<end_ymd>] [<start_ymd>]
             """
@@ -938,7 +1042,11 @@ class YFHistoryData(YFDB):
                 if args[0] == 'wget': 
                     print self.wget(*args[1:])
                 elif args[0] == 'get': 
-                    print self.get(*args[1:])
+                    rows = self.get(*args[1:])
+                    if rows and len(rows): 
+                        pprint_name_value(['#', 'start', 'end'], [len(rows), rows[0], rows[-1]])
+                    else:
+                        print 'no rows retrieved'
                 elif args[0] == 'delete': 
                     self.delete(*args[1:])
                 else:
@@ -947,13 +1055,17 @@ class YFHistoryData(YFDB):
                 raise
                 #self.test('help')
     
+    # ----------------------------------------------------------------------- #
     def get(self, ticker='^GSPC', end_ymd = '', start_ymd=''):
-        stock_id = YFStock().get_or_add_stock_id(ticker)
+        '''
+        get stock historic quota from local SQLite database
+        '''
+
+        stock_id = YFStock().get_stock_id(ticker)
 
         if stock_id: 
-            sql_cmd = """
-            SELECT * FROM DailyQuota WHERE StockID=%s 
-            """ % (stock_id)
+            sql_cmd = """SELECT * FROM DailyQuota WHERE StockID=%s""" % \
+                (stock_id)
 
             if end_ymd != '':
                 sql_cmd += ' AND Date<="%s"' % end_ymd
@@ -961,14 +1073,18 @@ class YFHistoryData(YFDB):
                 sql_cmd += ' AND Date>="%s"' % start_ymd
            
             if self.debug: 
-                print 'sql command:', sql_cmd
+                print 'YFHistoryData.get() - SQL command:', sql_cmd
 
             self.cursor.execute(sql_cmd)
 
             return self.cursor.fetchall()
-        
-        return None
+        else:
+            if self.debug: 
+                print 'YFHistoryData.get() : no such ticker  - %s' % ticker
 
+            return None
+
+    # ----------------------------------------------------------------------- #
     # CREATE TABLE DailyQuota (
     # StockID         integer NOT NULL,
     # Date            char(10),
@@ -986,6 +1102,7 @@ class YFHistoryData(YFDB):
     # PertSinceFYQtr  real,
     # PRIMARY KEY(StockID, Date),
     # FOREIGN KEY(StockID)    REFERENCES Stock(StockID));
+    # ----------------------------------------------------------------------- #
     def insert(self, ticker, rows):
         stock_id = YFStock().get_or_add_stock_id(ticker)
 
@@ -1004,6 +1121,7 @@ class YFHistoryData(YFDB):
 
         return r.rowcount
 
+    # ----------------------------------------------------------------------- #
     def delete(self, ticker, end_ymd = '9999-99-99', start_ymd='0000-00-00'):
         stock_id = YFStock().get_stock_id(ticker)
 
@@ -1035,12 +1153,31 @@ class YFHistoryData(YFDB):
 
             return 0
 
-    def wget(self, ticker='^GSPC', end_ymd = '', start_ymd=''):
+    def wget(self, ticker='^GSPC'):
+        rows = self.get(ticker)
+
+        if rows == None:
+            # rows == None, means not valid ticker
+            return None
+        elif len(rows) == 0:
+            # len(rows) == 0, means not no records in db
+            return self._wget(ticker)
+        else:
+            last_date = rows[-1][1]
+            return self._wget(ticker, YFDate().today_ymd, rows[-1][1])
+
+    # ----------------------------------------------------------------------- #
+    def _wget(self, ticker='^GSPC', end_ymd = '', start_ymd=''):
         '''
-        Get ticker's historical prices data from yahoo finance
+        The real function to wget yahoofinance historic Quota. 
+
+        vs wget: wget will check SQLite table to have the last date, then
+        call this function to wget contents
+
         url: http://real-chart.finance.yahoo.com/table.csv?
              s=NMBL&d=3&e=1&f=2015&g=d&a=11&b=13&c=2013&ignore=.csv
         NMBL: 2013-12-13 to 2015-3-31
+
         a = start_month - 1
         b = start_day 
         c = start_year
@@ -1048,16 +1185,15 @@ class YFHistoryData(YFDB):
         e = end_day
         f = end_year
 
-        So, let's take an easy way: 1900-0-1 to 9999-12-1, if no dates
-        specified. 
+        if no start/end specified, use: 1900-0-1 to 9999-12-1
 
         url: http://real-chart.finance.yahoo.com/table.csv?
              s=%s&d=12&e=1&f=9999&g=d&a=0&b=1&c=1900&ignore=.csv
         '''
 
         # assign a/b/c/d/e/f to default values in case no dates specfied
-        a, b, c = 0, 1, 1900
-        d, e, f = 12, 1, 9999
+        c, a, b = map(int, '1953-01-01'.split('-'))
+        f, d, e = map(int, YFDate().today_ymd.split('-'))
 
         # assign c/a/b based on start_ymd
         re1 = self.re_date.match(start_ymd)
@@ -1082,12 +1218,17 @@ class YFHistoryData(YFDB):
         }) 
         
         url = 'http://ichart.yahoo.com/table.csv?%s' % params
-        req = Request(url)
         
+        if self.debug:
+            print url
+
+        req = Request(url)
         try: 
             response = urlopen(req) 
         except: 
             print 'Error to wget yahoo historic quota for %s' % ticker
+            print 'url -> %s' % url
+            return 
         
         data = str(response.read().decode('utf-8').strip()) 
        
@@ -1115,46 +1256,103 @@ class YFDate:
     Yahoo Finance Date Class, colletion of procedures to process all kinds of 
     date related functions
     '''
+    # ----------------------------------------------------------------------- #
     def __init__(self, date_ = ''):
-        self.weekdays = [
-            'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun' 
-            ]
+        self.weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
         self.list_months  = [
             'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
             'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
             ]
-        self.list_numbers  = [
-            '1st', '2nd', '3rd', '4th', '5th'
-            ]
+        self.list_numbers  = ['1st', '2nd', '3rd', '4th', '5th']
+        self.days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
+        # set today variables
         self.get_today()
+        # load all sp500 trading days
+        self.load_sp_days()
+        # get all oe days
         self.get_oe_days()
 
+    # ----------------------------------------------------------------------- #
     def test(self, *args):
-        if len(args) < 2 or re.search('usage|help', args[0]):
-            print """usage: yahoofinance.py test-yfdate <method> <args>
-        range_quarter <Quarter> <num_quarter> <0|1: includ_this> 
-        like: range_quarter 2001Q1 10 0
-        
-        get_month_weekday_number <Date> <formate:number|text> 
-        like: get_month_weekday_number 2015-03-01 number
-        
-        spday_index <date> 
-        """
-        
+        if len(args) < 1 or re.search('usage|help', args[0]):
+            print """usage: yahoofinance.py test-yfdate <method> <args> 
+            today              : print out today values
+            oe                 : print out oe days
+            spdays             : print out sp days 
+            date_to_nthweekday <date> <text|number>
+            spday_index        <date> 
+            spday_of           <date> 
+            spday_diff         <date1> <date2>
+            spday_offset       <date1> <offset>
+            all               
+            """
         else:
             try: 
-                if args[0] == 'get_month_weekday_number': 
-                    print self.get_month_weekday_number(*args[1:])
+                if args[0] == 'today': 
+                    pprint_name_value(['year', 'month', 'day', 'ymd', 'ym'],
+                        [self.year, self.month, self.day, self.today_ymd,
+                        self.today_ym])
+
+                elif args[0] == 'oe': 
+                    pprint_name_value(['#', 'start', 'end'], \
+                    [len(self.oe_days), self.oe_days[0], self.oe_days[-1]])
+
+                elif args[0] == 'spdays': 
+                    pprint_name_value(['#', 'start', 'end'], \
+                    [len(self.sp_days), self.sp_days[0], self.sp_days[-1]])
+
+                elif args[0] == 'date_to_nthweekday': 
+                    print self.date_to_nthweekday(*args[1:])
+
                 elif args[0] == 'spday_index': 
-                    print self.spday_index(*args[1:])
+                    print self.sp_days[self.spday_index(*args[1:])]
+
+                elif args[0] == 'spday_of': 
+                    print self.spday_of(*args[1:])
+
+                elif args[0] == 'spday_diff':
+                    print self.spday_diff(*args[1:])
+
+                elif args[0] == 'spday_offset':
+                    print self.spday_offset(*args[1:])
+
+                elif args[0] == 'all': 
+                    print '------ today -------'
+                    pprint_name_value(['year', 'month', 'day', 'ymd', 'ym'],
+                        [self.year, self.month, self.day, self.today_ymd,
+                        self.today_ym])
+                    print '------ spdays -------'
+                    pprint_name_value(['#', 'start', 'end'], \
+                    [len(self.sp_days), self.sp_days[0], self.sp_days[-1]])
+                    print '------ oe -------'
+                    pprint_name_value(['#', 'start', 'end'], \
+                    [len(self.oe_days), self.oe_days[0], self.oe_days[-1]])
+                    print '------ date_to_nthwkday -------'
+                    dates = ['2014-10-01', '2011-01-02', '2013-03-15']
+                    for d in dates:
+                        print d, '-->', self.date_to_nthweekday(d)
+                        print d, '-->', self.date_to_nthweekday(d, 'number')
+                    print '------ spday_offset -------'
+                    dates = ['2014-10-01']*2 + ['2011-01-02']*2 + \
+                        ['2013-03-15']*2 + ['2001-06-08']*2
+                    offsets = ['10', '-10', '+1w', '1w', '-1W', '+1M', 
+                        '-1M', '3M', '-3M', '-2Y', '2Y']
+                    for d, o in zip(dates, offsets):
+                        print d, '%4s' % o, '-->', self.spday_offset(d, o)
+                    print '------ spday_diff -------'
+                    dates1 = ['2014-10-01', '2011-01-02', '2013-03-15']
+                    dates2 = ['2014-11-01', '2010-11-02', '2015-03-15']
+                    for d1, d2 in zip(dates1, dates2): 
+                        print d1, '-', d2, '=', self.spday_diff(d1, d2)
+                
                 else: 
                     self.test('help')
             except: 
                 raise
                 self.test('help')
 
-
+    # ----------------------------------------------------------------------- #
     def get_today(self):
         '''
         get today
@@ -1169,38 +1367,50 @@ class YFDate:
 
         self.today_ym = '%04d-%02d' % (self.year, self.month)
 
+    # ----------------------------------------------------------------------- #
     def get_oe_days(self):
         '''
         get all OE days, 3rd friday of the mth
         '''
         self.oe_days = []
-        for _year in range(START_YEAR, self.year+1):
-            for _month in range(1,13):
 
-                # get the weekday of 1st day of every month
-                first_weekday = \
-                    datetime.date(_year, _month, 1).timetuple()[6] + 1
+        number_month = 4 * (self.year - START_YEAR)
+        for ym in range_month(self.today_ym, number_month, mode='backward', 
+            include_this=1):
 
-                if first_weekday > 5 : 
-                    oe_day = (8 - first_weekday + 5) + 14
-                else:
-                    oe_day = 15 + 5 - first_weekday
+            year_, month_ = map(int, ym.split('-')) 
+            
+            # get the weekday of 1st day of every month 
+            first_wkdy = datetime.date(year_, month_, 1).timetuple()[6] + 1
 
-                self.oe_days.append("%04d-%02d-%02d" % (_year, _month, oe_day))
+            if first_wkdy > 5 : 
+                day_ = (8 - first_wkdy + 5) + 14
+            else:
+                day_ = 15 + 5 - first_wkdy
+
+            oe_day = "%04d-%02d-%02d" % (year_, month_, day_)
+
+            if oe_day <= self.sp_days[0] and oe_day >= self.sp_days[-1]: 
+                self.oe_days.append(self.spday_of(oe_day, mode='prev'))
+            else:
+                self.oe_days.append(oe_day)
   
-    # -------------------------- load_sp_days ------------------------------- #
-    # load all sp500 trading days
     # ----------------------------------------------------------------------- #
     def load_sp_days(self):
-        self.sp500_days = []
+        '''
+        load all sp500 trading days
+        '''
+        self.sp_days = []
+
         hd = YFHistoryData()
 
         for line in hd.get('^GSPC'): 
-            self.sp500_days.append(line.split(',')[0])
+            self.sp_days.append(line[1])
         
-        self.sp500_days.reverse() 
+        self.sp_days.reverse() 
 
-    def get_month_weekday_number(self, date, format='text'):
+    # ----------------------------------------------------------------------- #
+    def date_to_nthweekday(self, date, format='text'):
         '''
         given date, return numbered week/weekday, like 
         ('2001-01-04') -> 2001:1:1:3, 1st wed of 2001/01
@@ -1209,10 +1419,10 @@ class YFDate:
         
         # get year/mth/day of date
         [year, month, day] = map(int, date.split('-'))
-
+    
         weekday = datetime.date(year, month, day).timetuple()[6] + 1
         number_week = int(day)/7 + 1
-
+    
         if format == 'text':
             return '%s %s of %s' % (
                 self.list_numbers[number_week - 1], 
@@ -1225,69 +1435,63 @@ class YFDate:
     # ----------------------------------------------------------------------- #
     def spday_index(self, date_, mode='next'):
         '''
-        spday_index: index of date the closest day in sp500_days 
+        spday_index: index of date the closest day in sp_days 
         mode: default is to find the next sp day (the next trading day)
         '''
         # if date_ in sp_days, just return index
-        if date_ in self.sp500_days:
-            return self.sp500_days.index(date_)
+        if date_ in self.sp_days:
+            return self.sp_days.index(date_)
         
-        # if date_ earlier than first sp day, return 1st_sp_day
-        if date_ < self.sp500_days[0]:
-            return 0
-
-        # if date_ later than last sp day, return last_sp_day
-        if date_ > self.sp500_days[-1]:
-            return len(self.sp500_days) - 1
-
-        # if date_ not in sp500_days, return the next sp day
-        index_ = len(self.sp500_days) - 1
-        for i, _date_ in enumerate(self.sp500_days): 
-            if _date_ > date_:
+        # if date_ not in sp_days, return the next sp day
+        for i, d in enumerate(self.sp_days): 
+            if d < date_:
                 if mode == 'next':
-                    index_ = i - 1
-                else:
-                    index_ = i
+                    i -= 1
                 break
 
-        if index_ < 0 :
-            index_ = 0
+        if i < 0 :
+            i = 0
 
-        return index_
+        return i
 
+    # ----------------------------------------------------------------------- #
     def spday_of(self, date_, mode='next'):
         '''
         get_sp_day: given calendar date, return the closest sp trading day
         '''
-        return self.sp500_days[self.spday_index(date_, mode)]
+        return self.sp_days[self.spday_index(date_, mode)]
 
+    # ----------------------------------------------------------------------- #
     def spday_diff(self, date1, date2):
         '''
         spday_diff: given 2 dates, return the sp trading days between
         '''
-        return self.spday_index(date1) - self.spday_index(date2)
+        return -1 * (self.spday_index(date1) - self.spday_index(date2))
     
+    # ----------------------------------------------------------------------- #
     def spday_offset(self, date, offset):
         '''
         given date + offset, return sp trade day, e.g.
-        '2013-01-01', '+10' --> '2013-01-15'
-        '2013-02-28', '-10' --> '2013-02-14'
+        '2013-01-01', '+2w|+10' --> '2013-01-15'
+        '2013-02-28', '-10|-2w' --> '2013-02-14'
         '''
-        _index = self.spday_index(date) + int(self.number_sp_days(offset))
 
-        if _index < 0: 
-            _index = 0
+        i = self.spday_index(date) - int(self.number_days(offset))
 
-        if _index >= len(self.sp500_days): 
-            _index = -1
+        if i < 0: 
+            i = 0
 
-        return self.sp500_days[_index]
+        if i >= len(self.sp_days): 
+            i = -1
+
+        return self.sp_days[i]
 
     # ------------------------------------------------------------------------ #
-    # day_offset: given calendar date and offset like +30 days
-    # like, 12-31 +90, 
-    # ------------------------------------------------------------------------ #
-    def day_offset_md(self, mmdd, offset):
+    def ymd_offset(self, ymd, offset):
+        '''
+        day_offset: given calendar date and offset like:
+        like, 2001-12-31 +90, --> 2002-03-31
+        '''
         [month, day] = map(int, mmdd.split('-'))
         new_day = day + int(offset)
 
@@ -1321,35 +1525,47 @@ class YFDate:
         return list_fquarter_ends
 
 
-    # -------------------------------------------------------- #
-    # return number of days, like 1m,1w,1d
-    # -------------------------------------------------------- #
-    def number_sp_days(self, _str):
-        num_days = 0
+    # ----------------------------------------------------------------------- #
+    def number_days(self, str_, mode='trading'):
+        '''
+        return number of days, like 1m,1w,1d,1Y
+        Mode:
+        1) trading, Mth=21, Week=5, Year=252
+        2) calendar, mth=30, week=7, year=365
+        '''
 
-        a = re.search(
-            '([+|-]{0,1})(\d+)([wmdy]{0,1})', 
-            _str.lower()
-            )
+        num_days = 0
+        a = re.search('([+|-]{0,1})(\d+)([wmdy]{0,1})', str_.lower())
         
         if a:
+            _sign, _num, _unit = a.groups()
+
             sign = 1
-            if a.group(1) == '-':
+            if _sign == '-':
                 sign = -1
     
             unit = 1
-            if a.group(3) == 'w':
-                unit = 5
-            elif a.group(3) == 'm':
-                unit = 21
-            elif a.group(3) == 'y':
-                unit = 252
-            
-            num_days = sign * int(a.group(2)) * unit
+            if mode == 'trading':
+                if _unit == 'w':
+                    unit = 5
+                elif _unit == 'm':
+                    unit = 21
+                elif _unit == 'y':
+                    unit = 252
+            else:                
+                if _unit == 'w':
+                    unit = 7
+                elif _unit == 'm':
+                    unit = 30
+                elif _unit == 'y':
+                    unit = 365
+
+            num_days = sign * int(_num) * unit
 
         return str(num_days)
 
 
+# --------------------------------------------------------------------------- #
 def usage():
     print '''
 usage: yahoofinance.py <command> [<args>]
@@ -1367,9 +1583,11 @@ See 'yahoofinance.py <command> help' for more informationon a specific command.
 
 if __name__ == "__main__":
 
-    if len(sys.argv) < 2 or re.search('help|usage', sys.argv[1], 
+    # if no arguments provided, or help|usage
+    if len(sys.argv) == 1 or re.search('help|usage', sys.argv[1], 
         flags=re.IGNORECASE):
         usage()
+        sys.exit(0)
 
     elif sys.argv[1] == 'test-shared': 
         test_shared_func(*sys.argv[2:])
@@ -1386,53 +1604,25 @@ if __name__ == "__main__":
         hd = YFHistoryData()
         hd.test(*sys.argv[2:])
 
-    elif sys.argv[1] == 'test-xxxx': 
-        #def get_month_weekday_number(self, date, format='text')
-        if len(sys.argv) > 2 and sys.argv[2] == 'get_month_weekday_number':
-            print d.get_month_weekday_number(*sys.argv[3:])
+    elif sys.argv[1] == 'test-yfsector': 
+        s = YFSector()
+        s.test(*sys.argv[2:])
 
-        elif len(sys.argv) > 2 and sys.argv[2] == 'sp500_days':
+    elif sys.argv[1] == 'test-xxxx': 
+        #def date_to_nthweekday(self, date, format='text')
+        if len(sys.argv) > 2 and sys.argv[2] == 'date_to_nthweekday':
+            print d.date_to_nthweekday(*sys.argv[3:])
+
+        elif len(sys.argv) > 2 and sys.argv[2] == 'sp_days':
             try:
-                print 'sp500 day:', _yfd.sp500_days[int(sys.argv[3])]
+                print 'sp500 day:', _yfd.sp_days[int(sys.argv[3])]
             except:
                 print 'incorrect range :', sys.argv[3]
 
-        elif len(sys.argv) > 2 and sys.argv[2] == 'sp500_days':
-            pass
-            print '!!!! 1980-01-01 !!!!'
-            print _yfd.spday_index('1980-01-01')
-            print _yfd.get_sp_day('1980-01-01')
-            print _yfd.get_sp_day('1980-01-01', 'previous')
     
-            print '!!!! 2019-01-01 !!!!'
-            print _yfd.spday_index('2019-01-01')
-            print _yfd.get_sp_day('2019-01-01')
-            print _yfd.get_sp_day('2019-01-01', 'previous')
-    
-            print '!!!! first sp day !!!!'
-            print _yfd.spday_index(_yfd.sp500_days[0])
-            print _yfd.get_sp_day(_yfd.sp500_days[0])
-            print _yfd.get_sp_day(_yfd.sp500_days[0], 'previous')
-    
-            print '!!!! last sp day !!!!'
-            print _yfd.spday_index(_yfd.sp500_days[-1])
-            print _yfd.get_sp_day(_yfd.sp500_days[-1])
-            print _yfd.get_sp_day(_yfd.sp500_days[-1], 'previous')
-    
-            #def spday_diff(self, date1, date2):
-            for d1, d2 in zip(
-                [_yfd.sp500_days[0], '2015-01-09', '2015-01-01'],
-                [_yfd.sp500_days[-1], '2014-12-31', '2013-01-01']
-                ) :
-                print d1, '-', d2, ': ', _yfd.spday_diff(d1, d2)
-    
-            #def spday_offset(self, date, offset):
-            for offset in ['10', '-10', '+1w', '1w', '-1W', '+1M', '-1M', '3M', '-3M', '-2Y', '2Y']:
-                print '2015-01-02 ', offset, _yfd.spday_offset('2015-01-02', offset)
-    
-            #def number_sp_days(self, str):
+            #def number_days(self, str):
             for s in ['10d', '-10d', '10', '-10', '10W', '-10w', '10m', '-10M']:
-                print s, ': ', _yfd.number_sp_days(s)
+                print s, ': ', _yfd.number_days(s)
     
             for m in ['Jan', 'january', 'Feb', 'March', 'August', 'Ocx']:
                 print _yfd.month_atoi(m)
@@ -1562,21 +1752,3 @@ if __name__ == "__main__":
             print 'Wrong'
         else: 
             print p.html_text
-
-    elif len(sys.argv) > 1 and sys.argv[1] == 'htmlinsider': 
-        tick = raw_input('ticker for insider: ').strip()
-        p = SimpleHTMLParser('http://finance.yahoo.com/q/it?s=%s+Insider+Transactions' % tick,
-            YF_INSIDER)
-        if p.html_text == 'Error':
-            print 'Wrong'
-        else: 
-            print p.html_text
-
-        #print '\n'.join(p.list_url)
-
-    elif len(sys.argv) > 1 and sys.argv[1] == 'yfstockinfo': 
-        o = YFStockInfo()
-        #o.create_table_stock_info()
-        #for sym in ['CSCO', 'BRCD', 'ATEN', 'NMBL', 'ANET']: 
-        #    o.update_stock_info(sym) 
-        o.wget_sector_list()
