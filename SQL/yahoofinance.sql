@@ -23,6 +23,8 @@ MarketCap integer  DEFAULT 0,
 Start     text     DEFAULT '0000-00-00',
 End       text     DEFAULT '0000-00-00'
 );
+
+
 /*
 Stock ER dates
 */
@@ -33,21 +35,26 @@ CYQuarter char(6),
 ERDate    char(10),
 FOREIGN KEY(StockID) REFERENCES Stock(StockID));
 /*
+4 Tables: Source, Sector, Industry, Source:Sector:Industry:StockID
 */
 CREATE TABLE Source (
 SourceID    integer primary key NOT NULL,
 Name        text,
 Description text);
+INSERT INTO "Source" VALUES(1,'YF','Yahoo Finance');
+
 CREATE TABLE Sector(
 SectorID    integer primary key NOT NULL,
 Name        text,
 Description text
 );
+
 CREATE TABLE Industry(
 IndustryID  integer primary key NOT NULL,
 Name        text,
 Description text
 );
+
 CREATE TABLE StockSector (
 StockID    integer NOT NULL,
 SourceID   integer NOT NULL,
@@ -58,6 +65,7 @@ FOREIGN KEY(StockID)    REFERENCES Stock(StockID),
 FOREIGN KEY(SourceID)   REFERENCES Source(SourceID),
 FOREIGN KEY(SectorID)   REFERENCES Sector(SectorID),
 FOREIGN KEY(IndustryID) REFERENCES Industry(IndustryID));
+
 /*
 CREATE TABLE DailyQuota (
 .....
