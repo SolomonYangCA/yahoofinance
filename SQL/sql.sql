@@ -1,21 +1,39 @@
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
+/****************************************************************************\
+|                                Stock Tables                                |
+\****************************************************************************/
+
+/*
+Stock Information, KEY Table - StockID
+*/
 CREATE TABLE Stock (
 StockID   integer primary key NOT NULL,
-Ticker    char(10),
-Active    integer,
-Name      text,
-FYEnds    text,
-Beta      real,
-HasOption integer,
-Close     real,
-AvgVol    integer,
-Shares    integer,
-Floating  integer,
-MarketCap integer,
-Start     text,
-End       text
+Ticker    char(10) DEFAULT 'NA',
+Active    integer  DEFAULT 1,
+Name      text     DEFAULT 'NA',
+FYEnds    text     DEFAULT '12-31',
+Beta      real     DEFAULT '-1.0',
+HasOption integer  DEFAULT 0,
+Close     real     DEFAULT 0.0,
+AvgVol    integer  DEFAULT 0,
+Shares    integer  DEFAULT 0,
+Floating  integer  DEFAULT 0,
+MarketCap integer  DEFAULT 0,
+Start     text     DEFAULT '0000-00-00',
+End       text     DEFAULT '0000-00-00'
 );
+/*
+Stock ER dates
+*/
+CREATE TABLE StockER (
+StockID   integer NOT NULL,
+FYQuarter char(6),
+CYQuarter char(6),
+ERDate    char(10),
+FOREIGN KEY(StockID) REFERENCES Stock(StockID));
+/*
+*/
 CREATE TABLE Source (
 SourceID    integer primary key NOT NULL,
 Name        text,
@@ -40,30 +58,45 @@ FOREIGN KEY(StockID)    REFERENCES Stock(StockID),
 FOREIGN KEY(SourceID)   REFERENCES Source(SourceID),
 FOREIGN KEY(SectorID)   REFERENCES Sector(SectorID),
 FOREIGN KEY(IndustryID) REFERENCES Industry(IndustryID));
+/*
+CREATE TABLE DailyQuota (
+.....
+PertSinceCYQtr  real,  price% change since last Calendar Year Qtr End
+PertSinceFYQtr  real,  price% change since last Fiscal Year Qtr End
+.....
+*/
 CREATE TABLE DailyQuota (
 StockID         integer NOT NULL,
 Date            char(10),
-Open            real,
-High            real,
-Low             real,
-Close           real,
-Volume          integer,
-AdjClose        real,
-Amount          real,
-ClosePertage    real,
-AverageVolum3M  integer,
-CorrelationSP3M real,
+Open            real    DEFAULT 0.0,   
+High            real    DEFAULT 0.0,
+Low             real    DEFAULT 0.0,
+Close           real    DEFAULT 0.0,
+Volume          integer DEFAULT 0,
+AdjClose        real    DEFAULT 0.0,
+Amount          real    DEFAULT 0.0,
+ClosePertage    real    DEFAULT 0.0,
+AverageVolum3M  integer DEFAULT 0,
+CorrelationSP3M real    DEFAULT 0.0,
+PertSinceCYQtr  real    DEFAULT 0.0,
+PertSinceFYQtr  real    DEFAULT 0.0,
+PRIMARY KEY(StockID, Date),
 FOREIGN KEY(StockID)    REFERENCES Stock(StockID));
+
+/****************************************************************************\
+|                          Insider Transaction Tables                        |
+\****************************************************************************/
+
+/*
+Insider information
+*/
 CREATE TABLE Insider(
 InsiderID integer primary key NOT NULL,
 Name      text,
 Form4Url  text);
-CREATE TABLE StockER (
-StockID   integer NOT NULL,
-FYQuarter char(6),
-CYQuarter char(6),
-ERDate    char(10),
-FOREIGN KEY(StockID) REFERENCES Stock(StockID));
+/*
+Insider Transaction
+*/
 CREATE TABLE InsiderTrans(
 StockID     integer NOT NULL,
 InsiderID   integer NOT NULL,
