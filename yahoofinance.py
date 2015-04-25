@@ -408,11 +408,11 @@ class YFStock(YFDB):
         if len(args) < 2 or re.search('usage|help', args[0]):
             print """yahoofinance.py test_yfstock <method> <args>
             
-            get_stock_id        <ticker> e.g. get_stock_id YHOO
+            get_stock_id      <ticker> e.g. get_stock_id YHOO
             get_stock_info    <ticker> e.g. get_stock_info TSLA
-            wget_stock_info     <ticker> e.g. wget_stock_info OCLR
-            upsert_stock_info   <ticker> e.g. upsert_stock_info OCLR
-            get_or_add_stock_id <ticker> e.g. get_or_add_stock_id OCLR
+            wget_stock_info   <ticker> e.g. wget_stock_info OCLR
+            upsert_stock_info <ticker> e.g. upsert_stock_info OCLR
+            aget_stock_id     <ticker> e.g. aget_stock_id OCLR
             """
         else: 
             try: 
@@ -428,8 +428,8 @@ class YFStock(YFDB):
                     print self.wget_stock_info(*args[1:])
                 elif args[0] == 'upsert_stock_info':
                     print self.upsert_stock_info(*args[1:])
-                elif args[0] == 'get_or_add_stock_id':
-                    print self.get_or_add_stock_id(*args[1:])
+                elif args[0] == 'aget_stock_id':
+                    print self.aget_stock_id(*args[1:])
                 else:
                     self.test('usage')
             except:
@@ -445,9 +445,9 @@ class YFStock(YFDB):
             )
 
     # ----------------------------------------------------------------------- #
-    def get_or_add_stock_id(self, ticker):
+    def aget_stock_id(self, ticker):
         """
-        return StockID of ticker. If not existing, add it to DB
+        Get StockID of ticker. If not existing, add it to DB
         """
         id = self.get_stock_id(ticker)
 
@@ -593,6 +593,8 @@ class YFStock(YFDB):
        
         name = unicode(name, errors='replace').strip()
 
+        #if mkt_cap > 100 and avg_vol > 500000:
+
 
         if self.debug:
             print 'wget_stock_info, url - ', url 
@@ -708,7 +710,7 @@ class YFInsiderTransaction(YFDB):
 
     # ----------------------------------------------------------------------- #
     def wget_insider_transaction(self, ticker): 
-        stock_id = YFStock().get_or_add_stock_id(ticker)
+        stock_id = YFStock().aget_stock_id(ticker)
 
         if stock_id == None:
             if self.debug:
@@ -913,9 +915,10 @@ class YFSector(Sector):
     def test(self, *args):
         if len(args) < 1 or re.search('usage|help', args[0]):
             print """yahoofinance.py test-yfsector <method> <args>
-            
-            wget_industry_summary   : get list of yhaoo finance ind codes
-            wget_industry  <code>   : get yahoo finance industry info
+           
+            wget_all <1st # code> : get all yahoo finance of 1st code if present
+            wget_industry_summary : get list of yhaoo finance ind codes
+            wget_industry  <code> : get yahoo finance industry info
             """
         else: 
             try: 
@@ -923,6 +926,8 @@ class YFSector(Sector):
                     print '\n'.join(self.wget_industry_summary(*args[1:]))
                 elif args[0] == 'wget_industry': 
                     self.wget_industry(*args[1:])
+                elif args[0] == 'wget_all': 
+                    self.wget_all(*args[1:])
                 else:
                     self.test('usage')
             except:
@@ -938,6 +943,18 @@ class YFSector(Sector):
         else:
             return default
 
+    # ----------------------------------------------------------------------- #
+    def wget_all(self, first_digit='all'):
+        """
+        1) get list of ind codes from yahoo finance
+        2) for each ind code, aget sotck id/info
+        3) update StockSector table
+        """
+        codes = self.wget_industry_summary()
+
+        for code in codes:
+            if first_digit == 'all' or code[0] == first_digit:
+                self.wget_industry(code)
     # ----------------------------------------------------------------------- #
     def wget_industry_summary(self, sector_1st_num='all'): 
         """
@@ -984,7 +1001,7 @@ class YFSector(Sector):
 
         if self.debug: 
             print 'url: %s\n' % url
-            print p.html_text
+            #print p.html_text
             print 'sector:', sector 
             print 'industry:', industry 
             print 'stocks list:\n', '\n'.join(stock_list)
@@ -996,7 +1013,7 @@ class YFSector(Sector):
             industry_id = self.get_industry_id(industry)
 
             for stock in stock_list:
-                stock_id = YFStock().get_or_add_stock_id(stock)
+                stock_id = YFStock().aget_stock_id(stock)
 
                 # even stock_id = get_or_add, still have the chance
                 # stock not in yahoofinance.
@@ -1104,7 +1121,7 @@ class YFHistoryData(YFDB):
     # FOREIGN KEY(StockID)    REFERENCES Stock(StockID));
     # ----------------------------------------------------------------------- #
     def insert(self, ticker, rows):
-        stock_id = YFStock().get_or_add_stock_id(ticker)
+        stock_id = YFStock().aget_stock_id(ticker)
 
         rows_ = []
         for row in rows:
