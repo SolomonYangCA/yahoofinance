@@ -549,7 +549,7 @@ class YFStock(YFDB):
             level += mktcap_factor
 
         vol_factor = convert_int(average_volume)/250000
-        if mktcap_factor > 4:
+        if vol_factor > 4:
             level += 5
         else:
             level += vol_factor
@@ -1146,6 +1146,7 @@ class YFHistoryData(YFDB):
             wget   <ticker>
             get    <ticker> [<end_ymd>] [<start_ymd>]
             delete <ticker> [<end_ymd>] [<start_ymd>]
+            wget_all : get all yahoo finance of 1st code if present
             """
 
         else:
@@ -1160,6 +1161,8 @@ class YFHistoryData(YFDB):
                         print 'no rows retrieved'
                 elif args[0] == 'delete': 
                     self.delete(*args[1:])
+                elif args[0] == 'wget_all': 
+                    self.wget_all(*args[1:])
                 else:
                     self.test('help')
             except:
@@ -1190,9 +1193,6 @@ class YFHistoryData(YFDB):
 
             return self.cursor.fetchall()
         else:
-            if self.debug: 
-                print 'YFHistoryData.get() : no such ticker  - %s' % ticker
-
             return None
 
     # ----------------------------------------------------------------------- #
@@ -1265,15 +1265,18 @@ class YFHistoryData(YFDB):
             return 0
 
     def wget(self, ticker='^GSPC'):
-        rows = self.get(ticker)
-
-        if rows == None:
-            # rows == None, means not valid ticker
+        stock_id = YFStock().aget_stock_id(ticker)
+        if stock_id == None:
+            # if stock_id is None, not a valid ticker in table
             return None
-        elif len(rows) == 0:
+        
+        rows = self.get(ticker)
+        
+        if rows == None or len(rows) == 0:
             # len(rows) == 0, means not no records in db
             return self._wget(ticker)
         else:
+            # if we have records, only get records btwn last day and today
             last_date = rows[-1][1]
             return self._wget(ticker, YFDate().today_ymd, rows[-1][1])
 
@@ -1361,6 +1364,14 @@ class YFHistoryData(YFDB):
             return self.insert(ticker, rows)
         else:
             return 0
+
+    def wget_all(self, source='YF', min_active=0):
+        yfs = YFSector()
+        all_stocks = yfs.get_all_stock(source, min_active)
+
+        for stock in all_stocks:
+            print 'download yahoo finance daily - %s' % stock
+            self.wget(stock)
 
 class YFDate:
     '''
@@ -1501,7 +1512,8 @@ class YFDate:
 
             oe_day = "%04d-%02d-%02d" % (year_, month_, day_)
 
-            if oe_day <= self.sp_days[0] and oe_day >= self.sp_days[-1]: 
+            if len(self.sp_days) and oe_day <= self.sp_days[0] and \
+                oe_day >= self.sp_days[-1]: 
                 self.oe_days.append(self.spday_of(oe_day, mode='prev'))
             else:
                 self.oe_days.append(oe_day)
