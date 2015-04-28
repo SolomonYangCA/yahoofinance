@@ -397,7 +397,7 @@ class YFStock(YFDB):
         self.debug = 0
 
         self.list_field_wget = ['Ticker', 'Name', 'FYEnds', 'Beta', 'AvgVol',
-            'Shares', 'Floating', 'MarketCap']
+            'Shares', 'Floating', 'MarketCap', 'Active']
 
         self.list_field_all = ['StockID', 'Ticker', 'Active', 'Name', 'FYEnds', 
             'Beta', 'HasOption', 'Close', 'AvgVol', 'Shares', 'Floating', 
@@ -405,7 +405,7 @@ class YFStock(YFDB):
 
     # ----------------------------------------------------------------------- #
     def test(self, *args):
-        if len(args) < 2 or re.search('usage|help', args[0]):
+        if len(args) < 1 or re.search('usage|help', args[0]):
             print """yahoofinance.py test_yfstock <method> <args>
             
             get_stock_id      <ticker> e.g. get_stock_id YHOO
@@ -413,6 +413,7 @@ class YFStock(YFDB):
             wget_stock_info   <ticker> e.g. wget_stock_info OCLR
             upsert_stock_info <ticker> e.g. upsert_stock_info OCLR
             aget_stock_id     <ticker> e.g. aget_stock_id OCLR
+            adjust_active              
             """
         else: 
             try: 
@@ -430,6 +431,9 @@ class YFStock(YFDB):
                     print self.upsert_stock_info(*args[1:])
                 elif args[0] == 'aget_stock_id':
                     print self.aget_stock_id(*args[1:])
+                elif args[0] == 'adjust_active':
+                    print 'here'
+                    self.adjust_active()
                 else:
                     self.test('usage')
             except:
@@ -438,9 +442,12 @@ class YFStock(YFDB):
 
     # ----------------------------------------------------------------------- #
     def get_stock_id(self, ticker, active=1):
+        """
+        get stock id
+        """
         return self.fetch_id("""
             SELECT StockID FROM Stock
-            WHERE Ticker="%s" AND active=%d
+            WHERE Ticker="%s" AND active>=%d
             """ % (ticker, active)
             )
 
@@ -452,7 +459,10 @@ class YFStock(YFDB):
         id = self.get_stock_id(ticker)
 
         if id == None:
-            self.upsert_stock_info(ticker)
+            if ticker[0] == '^':
+                self.insert_index_info(ticker)
+            else: 
+                self.upsert_stock_info(ticker)
 
         return self.get_stock_id(ticker)
 
@@ -474,29 +484,23 @@ class YFStock(YFDB):
 
         return self.cursor.fetchone() 
 
-    # ----------------------------------------------------------------------- #
-    # CREATE TABLE Stock (                      No       Web
-    # StockID   integer primary key NOT NULL,   1)       
-    # Ticker    char(10) DEFAULT 'NA',          2)       x
-    # Active    integer  DEFAULT 0,             3)      
-    # Name      text     DEFAULT 'NA',          4)       x
-    # FYEnds    text     DEFAULT '12-31',       5)       x
-    # Beta      real     DEFAULT '-1.0',        6)       x
-    # HasOption integer  DEFAULT 0,             7)
-    # Close     real     DEFAULT 0.0,           8)
-    # AvgVol    integer  DEFAULT 0,             9)       x
-    # Shares    integer  DEFAULT 0,            10)       x
-    # Floating  integer  DEFAULT 0,            10)       x
-    # MarketCap integer  DEFAULT 0,            10)       x
-    # Start     text     DEFAULT '0000-00-00', 13)
-    # End       text     DEFAULT '0000-00-00'  14)
-    # );
-    # ----------------------------------------------------------------------- #
+    def insert_index_info(self, ticker):
+        r = self.cursor.execute("""
+            INSERT INTO Stock 
+            (Ticker, Active, Name, FYEnds,  Beta) VALUES 
+            (?,      9,      ?,    '12-31', 1)
+            """, (ticker, ticker)
+            ) 
+        self.conn.commit() 
+        return r.rowcount
+
     def upsert_stock_info(self, ticker):
+        #ticker, name, fy_ends, beta, avg_vol, shares, floating, mkt_cap, 
+        #active
         list_value = self.wget_stock_info(ticker)
 
-        if list_value[1] == None or (list_value[1] == 'NA' and 
-            list_value[-1] == 0):
+        if list_value[1] == None or list_value[1] == 'NA':
+            #and list_value[-2] == 0):
             if self.debug:
                 print 'failed to get stock info or invalid ticker - %s' % ticker
             return 0
@@ -508,7 +512,7 @@ class YFStock(YFDB):
             r = self.cursor.execute("""
             INSERT INTO Stock 
             (%s) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """ % ','.join(self.list_field_wget), list_value
             )
         else:
@@ -516,14 +520,50 @@ class YFStock(YFDB):
             r = self.cursor.execute("""
             UPDATE Stock SET
             Name=?, FYEnds=?, Beta=?, AvgVol=?, Shares=?, Floating=?, 
-            MarketCap=?
-            WHERE StockID=?""", ( tuple(list_value[1:]) + tuple([stock_id]) )
+            MarketCap=?, Active=?
+            WHERE StockID=?""", 
+            (tuple(list_value[1:]) + tuple([stock_id]))
             )
 
         self.conn.commit()
 
         return r.rowcount
 
+    # ----------------------------------------------------------------------- #
+    def active_level(self, average_volume, market_cap, amount, has_option,
+        price):
+        '''
+        0: not active/delisted, not decided by this func but when changed
+        1: listed/valid, but not active
+        9: listed and active, (avgvol>200K & mktcap>100M) or (avg_vol)>500K
+        '''
+        level = 0
+
+        if has_option:
+            level = 2
+
+        mktcap_factor = convert_int(market_cap)/250
+        if mktcap_factor > 4:
+            level += 5
+        else:
+            level += mktcap_factor
+
+        vol_factor = convert_int(average_volume)/250000
+        if mktcap_factor > 4:
+            level += 5
+        else:
+            level += vol_factor
+
+        # amount < 100K, it is 0
+        if amount != -1 and amount < 500000:
+            level = 0
+
+        # price < 1, forget 
+        if price != -1 and price < 1:
+            level = 0
+                
+        return level
+                
     # ----------------------------------------------------------------------- #
     def wget_stock_info(self, ticker):
         """
@@ -590,18 +630,34 @@ class YFStock(YFDB):
         shares = convert_int(_shares)
         floating = convert_int(_floating)
         beta = convert_float(_beta, -1.0)
+
+        #active_level(average_volume, market_cap, amount, has_option, price):
+        active = self.active_level(avg_vol, mkt_cap, -1, 0, -1)
        
         name = unicode(name, errors='replace').strip()
 
-        #if mkt_cap > 100 and avg_vol > 500000:
-
-
         if self.debug:
             print 'wget_stock_info, url - ', url 
-            pprint_name_value(self.list_field_wget, [ticker, name, fy_ends, beta, \
-                avg_vol, shares, floating, mkt_cap])
+            pprint_name_value(self.list_field_wget, [ticker, name, fy_ends, \
+                beta, avg_vol, shares, floating, mkt_cap, active])
 
-        return ticker, name, fy_ends, beta, avg_vol, shares, floating, mkt_cap
+        return ticker, name, fy_ends, beta, avg_vol, shares, floating,\
+            mkt_cap, active
+
+    # ----------------------------------------------------------------------- #
+    def adjust_active(self): 
+        '''
+        Go thru all stock info, adjust active field
+        #if mkt_cap > 100 and avg_vol > 500000:
+        * avgvol > 
+        '''
+
+        self.cursor.execute("""
+            SELECT * FROM Stock WHERE Active!=-1
+            """)
+
+        for row in self.cursor.fetchall():
+            print row[1]
 
 class YFInsider(YFDB):
     """
@@ -806,7 +862,7 @@ class Sector(YFDB):
     '''
 
     def __init__(self):
-        YFDB.__init__(self, "Sector")
+        YFDB.__init__(self, "StockSector")
         self.debug = 1 
 
         # --------------------------- dictionaries -------------------------- #
@@ -893,12 +949,34 @@ class Sector(YFDB):
         load table - YFSector into dictionaries
         '''
 
-        self.dict_stock2sector = {}
-        self.dict_stcok2industry = {}
-        self.dict_industry2sector = {}
+        # dict: stock to sector
+        self.stock_to_sector = {}
+        self.stock_to_industry = {}
+        self.industry_to_sector = {}
 
-        rows = self.conn.executemany(""" SELECT * FROM StockSector """)
+        rows = self.cursor.executemany("""
+            SELECT StockerFROM StockSector AS SS JOIN
+            """)
 
+    def get_all_stock(self, source='YF', min_active=0):
+        '''
+        find all stickers with minium active level
+        Stock<=StockID=>StockSector<=SourceID=>Source
+        '''
+
+        self.cursor.execute("""
+            SELECT Ticker
+            FROM Stock AS s
+            LEFT OUTER JOIN StockSector AS ss ON ss.StockID=s.StockID
+            LEFT OUTER JOIN Source AS src on src.SourceID=ss.SourceID
+            WHERE src.Name=? and s.Active>=?
+            """, (source, min_active))
+
+        data = self.cursor.fetchall()
+        stocks = list(zip(*data)[0])
+
+        return stocks
+        
 
 class YFSector(Sector):
     """
@@ -919,6 +997,8 @@ class YFSector(Sector):
             wget_all <1st # code> : get all yahoo finance of 1st code if present
             wget_industry_summary : get list of yhaoo finance ind codes
             wget_industry  <code> : get yahoo finance industry info
+
+            get_all_stock <active>: get all stock tickers
             """
         else: 
             try: 
@@ -928,6 +1008,8 @@ class YFSector(Sector):
                     self.wget_industry(*args[1:])
                 elif args[0] == 'wget_all': 
                     self.wget_all(*args[1:])
+                elif args[0] == 'get_all_stock': 
+                    print len(self.get_all_stock("YF", *args[1:]))
                 else:
                     self.test('usage')
             except:
@@ -939,7 +1021,7 @@ class YFSector(Sector):
     def re(self, re_str, line, default=0):
         found = re.match(re_str, line)
         if found:
-            return found.group(1)
+            return found.group(1).strip()
         else:
             return default
 
@@ -952,7 +1034,7 @@ class YFSector(Sector):
         """
         codes = self.wget_industry_summary()
 
-        for code in codes:
+        for code in sorted(codes):
             if first_digit == 'all' or code[0] == first_digit:
                 self.wget_industry(code)
     # ----------------------------------------------------------------------- #
@@ -977,6 +1059,7 @@ class YFSector(Sector):
                 list_code.append(a.group(1))
 
         return list_code
+    
     # ----------------------------------------------------------------------- #
     def wget_industry(self, code): 
         url = 'http://biz.yahoo.com/p/%dconameu.html' % convert_int(code)
@@ -995,16 +1078,14 @@ class YFSector(Sector):
 
             stock_found = re.search('^\|.*[^|]+\(([A-Z ]+)\).*\|', line) 
             
-            if stock_found: 
-                stock_list.append(stock_found.group(1).strip())
+            if stock_found:
+                stock = stock_found.group(1).strip()
+                if stock not in stock_list: 
+                    stock_list.append(stock)
                 
-
         if self.debug: 
-            print 'url: %s\n' % url
-            #print p.html_text
-            print 'sector:', sector 
-            print 'industry:', industry 
-            print 'stocks list:\n', '\n'.join(stock_list)
+            pprint_name_value(['Code', 'Sector', 'Industry', 'URL', 'Stocks'], 
+                [code, sector, industry, url, ';'.join(stock_list)])
 
         if sector != '' and industry != '' and len(stock_list):
             rows = []
@@ -1020,17 +1101,30 @@ class YFSector(Sector):
                 if stock_id: 
                     rows.append((stock_id, self.source_id, sector_id, 
                         industry_id))
-            
-            if self.debug: 
-                print "rows add into StockSector table:"
-                print rows
+                else:
+                    print "ERROR: wget_industry, can't get stockid - %s" % \
+                        stock
+           
+            if len(rows): 
+                if self.debug: 
+                    print "rows add into StockSector table:" 
+                    print rows
 
-            self.conn.executemany("""
-                INSERT INTO StockSector VALUES(?, ?, ?, ?)
-                """, tuple(rows)
-                )
+                self.cursor.executemany(""" 
+                    INSERT INTO StockSector VALUES(?, ?, ?, ?) 
+                    """, tuple(rows)
+                    )
 
-            self.conn.commit()
+                self.conn.commit()
+            else:
+                print "ERROR: No rows to insert StockSector Table"
+                pprint_name_value(['Code', 'Sector', 'Industry', 'URL', 'Stocks'], 
+                [code, sector, industry, url, ';'.join(stock_list)])
+
+        else:
+            print "ERROR: Incorrect data when wget_industry"
+            pprint_name_value(['Code', 'Sector', 'Industry', 'URL', 'Stocks'], 
+                [code, sector, industry, url, ';'.join(stock_list)])
 
 class YFHistoryData(YFDB):
     '''
@@ -1078,7 +1172,7 @@ class YFHistoryData(YFDB):
         get stock historic quota from local SQLite database
         '''
 
-        stock_id = YFStock().get_stock_id(ticker)
+        stock_id = YFStock().aget_stock_id(ticker)
 
         if stock_id: 
             sql_cmd = """SELECT * FROM DailyQuota WHERE StockID=%s""" % \
@@ -1127,7 +1221,7 @@ class YFHistoryData(YFDB):
         for row in rows:
             rows_.append([stock_id] + row.split(','))
 
-        r = self.conn.executemany("""
+        r = self.cursor.executemany("""
             INSERT OR REPLACE INTO DailyQuota 
             (StockID, Date, Open, High, Low, Close, Volume, AdjClose)
             VALUES (?,?,?,?,?,?,?,?)
@@ -1658,114 +1752,3 @@ if __name__ == "__main__":
             #get_FY_quarter_ends(self, FY_end):
             for fy_end in ['12-31', '01-15', '04-15', '08-01']:
                 print fy_end, ' ==> ', o.get_FY_quarter_ends(fy_end)
-
-    elif len(sys.argv) > 1 and sys.argv[1] == 'yfsector':
-        '''
-        yahoofinance.py yfsector : testing class YFSector
-        '''
-
-        if len(sys.argv) > 2 and sys.argv[2] == 'wget':
-            '''
-            wget     --> download all yahoo finance indsutry'
-            wget 1   --> download yahoo finance indsutry 1xx
-            ''' 
-
-            sector = YFSector() 
-
-            if len(sys.argv) > 3:
-                sector.wget_sector_industry_sum(sys.argv[3])
-            else:
-                sector.wget_sector_industry_sum('all')
-    
-        if len(sys.argv) > 2 and sys.argv[2] == 'stock':
-            '''
-            Download yahoofiance stock info
-            '''
-            stock = YFStock()
-
-            if len(sys.argv) > 3:
-                stock.upsert_stock_info(sys.argv[3])
-
-
-
-    if len(sys.argv) > 1 and sys.argv[1] == 'db': 
-        """
-        test class YFDB()
-        """
-        if len(sys.argv) > 2:
-            db = YFDB(sys.argv[2])
-            db.pprint()
-        else:
-            db = YFDB()
-            db.pprint()
-
-    if len(sys.argv) > 1 and sys.argv[1] == 'insider': 
-        """
-        test class Insider
-        """
-        insider = YFInsider()
-        insider.pprint()
-
-    if len(sys.argv) > 1 and sys.argv[1] == 'insidertrans': 
-        s = YFInsiderTransaction()
-
-        if len(sys.argv) > 2 and sys.argv[2] == 'wget':
-            tick = raw_input("ticker: ") 
-            s.wget_insider_transaction(tick)
-        else:
-            s.pprint()
-
-    if len(sys.argv) > 1 and sys.argv[1] == 'sector': 
-        sector = YFSector()
-        num = raw_input('first digit of yahoo finance sector: ')
-        sector.wget_sector_industry_sum(num)
-
-#-----------------------------------------------------------------------------#
-    if len(sys.argv) > 1 and sys.argv[1] == 'yfhisdata': 
-        o = YFHistoryData()
-        #def load(self, _ticker='^GSPC', _start=START_DATE, _end='9999-99-99'):
-        print '# of SP500 days since 1993-01-01: ', len(o.load())
-
-        while True:
-            ticker = raw_input('input a ticker: ').strip()
-            print ticker
-            if ticker == 'end': 
-                break
-            print '# of %s history data is ' % ticker, len(o.load(ticker))
-            print '\n'.join(o.load(ticker))
-
-    elif len(sys.argv) > 1 and sys.argv[1] == 'yfinsider': 
-        s = YFInsider()
-        s.delete_insider_by_id(1)
-
-        url = 'http://www.yahoo.com'
-        for i in ['TEST', 'TEST1', 'TEST2', 'XXX', 'YYY']:
-            print i, ':', s.get_insider_id(i, url)
-      
-        i = 'XXX'
-        print 'add_insider_id :', i
-        s.add_insider_id(i, url)
-        print i, ':', s.get_insider_id(i, url)
-
-        i = 'YYY'
-        print i, 'add_or_get :', s.get_or_add_insider_id(i, url)
-    
-        i = 'TEST'
-        print i, 'add_or_get :', s.get_or_add_insider_id(i, url)
-
-        s.pprint('Insider')
-
-    elif len(sys.argv) > 1 and sys.argv[1] == 'test_basic': 
-        for u in ['b', 'M', 'k', '']:
-            print u, '-->', unit_to_number(u)
-        for n in ['100b', '1.68B', '2.5M', '2.4M', '1568k', '6,056,840']:
-            print n, '==>', convert_int(n)
-
-    # test - SimpleHTMLParser
-    elif len(sys.argv) > 1 and sys.argv[1] == 'html': 
-        url = raw_input('url: ')
-        p = SimpleHTMLParser(url)
-        if p.html_text == 'Error':
-            print 'Wrong'
-        else: 
-            print p.html_text
