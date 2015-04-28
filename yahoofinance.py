@@ -441,7 +441,7 @@ class YFStock(YFDB):
                 self.test('usage')
 
     # ----------------------------------------------------------------------- #
-    def get_stock_id(self, ticker, active=1):
+    def get_stock_id(self, ticker, active=0):
         """
         get stock id
         """
