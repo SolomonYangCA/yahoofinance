@@ -1069,6 +1069,10 @@ class Sector(YFDB):
         return stocks
         
     def get_stock_sector_info(self, stock, source="YF"): 
+        """
+        based on stock ticker, return name of sector, industry, list of
+        peers in sector, industry
+        """
         stock_id = YFStock().aget_stock_id(stock) 
         sector_id = self.get_sector_id(sector)
         source_id = Sector().get_source_id(source)
@@ -1440,12 +1444,12 @@ class YFQuota(YFDB):
         req = Request(url)
         try: 
             response = urlopen(req) 
+            data = str(response.read().decode('utf-8').strip()) 
         except: 
             print 'Error to wget yahoo historic quota for %s' % ticker
             print 'url -> %s' % url
             return 
         
-        data = str(response.read().decode('utf-8').strip()) 
        
         rows = []
          
