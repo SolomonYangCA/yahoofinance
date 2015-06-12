@@ -30,10 +30,15 @@ Stock ER dates
 */
 CREATE TABLE StockER (
 StockID   integer NOT NULL,
+SourceID  integer NOT NULL,
+RawDate   char(10),
+RawTime   char(20),
 FYQuarter char(6),
 CYQuarter char(6),
 ERDate    char(10),
-FOREIGN KEY(StockID) REFERENCES Stock(StockID));
+FOREIGN KEY(StockID)  REFERENCES Stock(StockID),
+FOREIGN KEY(SourceID) REFERENCES Source(SourceID)
+);
 /*
 4 Tables: Source, Sector, Industry, Source:Sector:Industry:StockID
 */
