@@ -346,7 +346,7 @@ def get_today_dates():
 YF_INSIDER = 1
 NONEWLINE = 2
 
-class SimpleHTMLParser:
+class SimpleHTMLParser(object):
     """
     A very simple HTML parser on top of urllib, flags:
     * YF_INISDER: reading yahoofinance insider info to get url of form 4
@@ -419,7 +419,7 @@ class SimpleHTMLParser:
             if not line == '': 
                 self.html_text += line
 
-class Log:
+class Log(object):
     """
     Write log entry to file
     """
@@ -433,7 +433,7 @@ class Log:
             f.write('%s: %s\n' % (datetime.datetime.now(), message))
             f.close()
          
-class YFDB:
+class YFDB(object):
     """
     super class for yahoo finance database. 
     self.table is the default table for various class. 
@@ -454,14 +454,31 @@ class YFDB:
             print row
 
     # ----------------------------------------------------------------------- #
-    def fetch_id(self, sql_code):
+    def fetch_one(self, sql_code):
+        """
+        Just fetch one column and one row from sql code, like from id to name,
+        name to id, etc
+        """
         self.cursor.execute(sql_code)
         
         row = self.cursor.fetchone()
-        if row == None:
-            return None
-        else:
+        if row:
             return row[0]
+        
+        return None
+
+    def fetch_many(self, sql_code):
+        """
+        Just fetch many row of one column from sql code, like from sectorid to
+        all stock tickers
+        """
+        self.cursor.execute(sql_code)
+        
+        row = self.cursor.fetchall()
+        if row:
+            return list(zip(*row)[0])
+        
+        return []
 
 class YFStock(YFDB):
     """
@@ -522,7 +539,7 @@ class YFStock(YFDB):
         """
         get stock id
         """
-        return self.fetch_id("""
+        return self.fetch_one("""
             SELECT StockID FROM Stock
             WHERE Ticker="%s" AND active>=%d
             """ % (ticker, active)
@@ -736,6 +753,57 @@ class YFStock(YFDB):
         for row in self.cursor.fetchall():
             print row[1]
 
+class YFStockER(YFDB):
+    """
+    Class for ER info in yahoo finance
+    """
+    # ----------------------------------------------------------------------- #
+    def __init__(self):
+        YFDB.__init__(self, "StockER")
+        self.debug = 0
+
+    # ----------------------------------------------------------------------- #
+    def test(self, *args):
+        if len(args) < 1 or re.search('usage|help', args[0]):
+            print """yahoofinance.py test_yfstocker <method> <args>
+            
+            wget_er_by_day     day
+            """
+        else: 
+            try: 
+                if args[0] == 'wget_er_by_day': 
+                    print self.wget_er_by_day(*args[1:])
+                elif args[0] == 'get_stock_info': 
+                    stock_info = self.get_stock_info(*args[1:])
+                    if stock_info: 
+                        pprint_name_value(self.list_field_all, stock_info)
+            except:
+                raise
+                self.test('usage')
+    # ----------------------------------------------------------------------- #
+    #WORK
+    def wget_er_by_day(self, day):
+        """
+        Get all ER stock on the day from url:
+        http://biz.yahoo.com/research/earncal/20150612.html
+        """
+
+        url = 'http://biz.yahoo.com/research/earncal/%s.html' % day
+        print url
+        raw_input()
+
+        p = SimpleHTMLParser(url)
+
+        start = 0
+        for line in p.html_text.split('\n'):
+            if start:
+                a = re.search('^\|[^\|]+\|\s*([A-Z]+)\s*\|[^\|]+\|([^\|]+)\|',
+                    line)
+                if a:
+                    print a.groups()
+            elif re.search('Earnings Announcements for', line):
+                start = 1
+
 class YFInsider(YFDB):
     """
     Class for Insider info in yahoo finance
@@ -767,7 +835,7 @@ class YFInsider(YFDB):
    
     # ----------------------------------------------------------------------- #
     def get_insider_id(self, name, form_url): 
-        return self.fetch_id("""
+        return self.fetch_one("""
             SELECT InsiderID FROM Insider 
             WHERE Name='%s' and Form4Url='%s'
             """ % (name, form_url)
@@ -914,7 +982,7 @@ class YFInsiderTransaction(YFDB):
             (stock_id, insider_id, role, date, trans, price, shares, value) \
             = row
 
-            record = self.fetch_id("""
+            record = self.fetch_one("""
             SELECT * FROM InsiderTrans 
             WHERE StockID=\"%s\" AND InsiderID=\"%s\" AND Date=\"%s\" AND
                   BuySell=\"%s\" AND Shares=\"%s\"
@@ -950,28 +1018,86 @@ class Sector(YFDB):
     def test(self, *args): 
         list_title, list_value = [], []
 
+        list_title.append("SouceID:1")
+        list_value.append(self.get_source_name(1))
+        list_title.append("SectorID:2")
+        list_value.append(self.get_sector_name(2))
+        list_title.append("IndustryID:3")
+        list_value.append(self.get_industry_name(3))
         list_title.append("YF")
         list_value.append(self.get_source_id("YF"))
         list_title.append("Technology")
         list_value.append(self.get_sector_id("Technology"))
         list_title.append("Computer Peripherals")
-        list_value.append(self.get_industry_id("Computer Peripherals")) 
+        list_value.append(self.aget_industry_id("Computer Peripherals")) 
+        list_title.append("Stocks:Technology")
+        list_value.append(len(self.get_source_sector_industry_stocks('YF', 
+            'Technology', "all")))
+        list_title.append("Stocks:Computer Peripherals")
+        list_value.append(';'.join(self.get_source_sector_industry_stocks('YF', 
+            'Technology', "Computer Peripherals")))
+        list_title.append("YHOO Sector Info")
+        list_value.append(self.get_stock_sector_info_all('YHOO'))
+        list_title.append("TSLA Sector Info")
+        list_value.append(self.get_stock_sector_info_all('TSLA'))
+        list_title.append("NONE Sector Info")
+        list_value.append(self.get_stock_sector_info('NONE'))
         
         pprint_name_value(list_title, list_value)
 
     # ----------------------------------------------------------------------- #
-    def get_source_id(self, name):
-        id = self.fetch_id("""
-            SELECT SourceID FROM Source WHERE Name='%s' 
-            """ % (name,)
+    def _get_name_by_id(self, id, table_name='Source'):
+        """
+        get name by id, from 3 tables, Source, Sector, Indutry
+        """
+        id_name = 'SourceID'
+
+        if table_name == 'Sector':
+            table_name = 'Sector'
+            id_name = 'SectorID'
+        elif table_name == 'Industry':
+            table_name = 'Industry'
+            id_name = 'IndustryID'
+
+        return self.fetch_one("""
+            SELECT Name FROM %s WHERE %s='%s' 
+            """ % (table_name, id_name, id)
             )
-        if not id:
-            self.add_source(name, name)
-            id = self.fetch_id(""" 
-                SELECT SourceID FROM Source WHERE Name='%s'
-                """ % (name,)
-                )
-        return id
+
+    # ----------------------------------------------------------------------- #
+    def get_source_name(self, source_id):
+        return self._get_name_by_id(source_id, 'Source')
+    
+    # ----------------------------------------------------------------------- #
+    def get_sector_name(self, sector_id):
+        return self._get_name_by_id(sector_id, 'Sector')
+    
+    # ----------------------------------------------------------------------- #
+    def get_industry_name(self, industry_id):
+        return self._get_name_by_id(industry_id, 'Industry')
+    
+    # ----------------------------------------------------------------------- #
+    def _get_id_by_name(self, name, table_name='Source'):
+        """
+        get id by name, from 3 tables, Source, Sector, Indutry
+        """
+        id_name = 'SourceID'
+
+        if table_name == 'Sector':
+            table_name = 'Sector'
+            id_name = 'SectorID'
+        elif table_name == 'Industry':
+            table_name = 'Industry'
+            id_name = 'IndustryID'
+
+        return self.fetch_one("""
+            SELECT %s FROM %s WHERE Name='%s' 
+            """ % (id_name, table_name, name)
+            )
+
+    # ----------------------------------------------------------------------- #
+    def get_source_id(self, name):
+        return self._get_id_by_name(name, table_name='Source')
 
     # ----------------------------------------------------------------------- #
     def add_source(self, name, description=''):
@@ -985,13 +1111,13 @@ class Sector(YFDB):
    
     # ----------------------------------------------------------------------- #
     def get_sector_id(self, name):
-        id = self.fetch_id("""
+        id = self.fetch_one("""
             SELECT SectorID FROM Sector WHERE Name='%s'
             """ % (name,)
             )
         if not id:
             self.add_sector(name, name)
-            id = self.fetch_id(""" 
+            id = self.fetch_one(""" 
                 SELECT SectorID FROM Sector WHERE Name='%s'
                 """ % (name,)
                 )
@@ -1008,14 +1134,17 @@ class Sector(YFDB):
         self.conn.commit()
    
     # ----------------------------------------------------------------------- #
-    def get_industry_id(self, name):
-        id = self.fetch_id("""
+    def aget_industry_id(self, name):
+        """
+        get or add industry id by name
+        """
+        id = self.fetch_one("""
             SELECT IndustryID FROM Industry WHERE Name='%s'
             """ % (name,)
             )
         if not id:
             self.add_industry(name, name)
-            id = self.fetch_id(""" 
+            id = self.fetch_one(""" 
                 SELECT IndustryID FROM Industry WHERE Name='%s'
                 """ % (name,)
                 )
@@ -1032,51 +1161,96 @@ class Sector(YFDB):
         self.conn.commit()
    
     # ----------------------------------------------------------------------- #
-    def load_db(self):
-        '''
-        load table - YFSector into dictionaries
-        '''
-
-        # dict: stock to sector
-        self.stock_to_sector = {}
-        self.stock_to_industry = {}
-        self.industry_to_sector = {}
-
-        rows = self.cursor.executemany("""
-            SELECT StockerFROM StockSector AS SS JOIN
-            """)
-
     def get_all_stock(self, source='YF', min_active=0):
         '''
         find all stickers with minium active level
         Stock<=StockID=>StockSector<=SourceID=>Source
         '''
-
         stocks = []
 
-        self.cursor.execute("""
+        return self.fetch_many("""
             SELECT Ticker
             FROM Stock AS s
             LEFT OUTER JOIN StockSector AS ss ON ss.StockID=s.StockID
             LEFT OUTER JOIN Source AS src on src.SourceID=ss.SourceID
-            WHERE src.Name=? and s.Active>?
-            """, (source, min_active))
+            WHERE src.Name="%s" and s.Active>%d
+            """ % (source, min_active)
+            )
 
-        data = self.cursor.fetchall()
-        if data: 
-            stocks = list(zip(*data)[0])
+    def get_stock_sector_info_all(self, stock, source="YF"): 
+        """
+        based on stock ticker, return a list of stock sector info 
+        get_stock_sector_info + list_industry_stocks 
+        """
 
-        return stocks
-        
+        rows = []
+        for row in self.get_stock_sector_info(stock, source):
+            (d, d, d, source, d, sector, d, industry) = row
+            rows.append(list(row) + [\
+                list(self.get_source_sector_industry_stocks(source, sector, \
+                industry))])
+
+        return rows
+
     def get_stock_sector_info(self, stock, source="YF"): 
         """
-        based on stock ticker, return name of sector, industry, list of
-        peers in sector, industry
+        based on stock ticker, return a list of stock sector info 
+        [stockid, stock, source, sourceid, sector, sectorid, 
+        industry, industryid]
         """
-        stock_id = YFStock().aget_stock_id(stock) 
-        sector_id = self.get_sector_id(sector)
-        source_id = Sector().get_source_id(source)
+        sql_cmd = """
+            SELECT 
+                StockSector.StockID,
+                Stock.Ticker,
+                StockSector.SourceID,
+                Source.Name,
+                StockSector.SectorID,
+                Sector.Name,
+                StockSector.IndustryID,
+                Industry.Name
+            FROM 
+                StockSector
+                LEFT JOIN Stock ON Stock.StockID=StockSector.StockID
+                LEFT JOIN Source ON Source.SourceID=StockSector.SourceID
+                LEFT JOIN Sector ON Sector.SectorID=StockSector.SectorID
+                LEFT JOIN Industry ON Industry.IndustryID=StockSector.IndustryID
+            WHERE 
+                Stock.Ticker="%s" and Stock.Active>=0
+        """ % (stock)
 
+        if source.lower() != 'all':
+            sql_cmd += 'AND Source.Name="%s"' % source
+
+        self.cursor.execute(sql_cmd) 
+
+        return self.cursor.fetchall()
+
+    def get_source_sector_industry_stocks(self, source, sector, industry):
+        """
+        based source/sector, get all tickers
+        """
+        sql_cmd = """
+            SELECT 
+                Stock.Ticker
+            FROM 
+                StockSector
+                LEFT JOIN Stock ON Stock.StockID=StockSector.StockID
+                LEFT JOIN Source ON Source.SourceID=StockSector.SourceID
+                LEFT JOIN Sector ON Sector.SectorID=StockSector.SectorID
+                LEFT JOIN Industry ON Industry.IndustryID=StockSector.IndustryID
+            WHERE 
+                Stock.Active>=0
+        """
+        if source.lower() != 'all':
+            sql_cmd += 'AND Source.Name="%s"' % source
+            
+        if sector.lower() != 'all':
+            sql_cmd += 'AND Sector.Name="%s"' % sector
+
+        if industry.lower() != 'all':
+            sql_cmd += 'AND Industry.Name="%s"' % industry
+       
+        return self.fetch_many(sql_cmd)
 
 class YFSector(Sector):
     """
@@ -1100,7 +1274,9 @@ class YFSector(Sector):
             """
         else: 
             try: 
-                if args[0] == 'wget_industry_summary': 
+                if args[0] == 'sector':
+                    super(YFSector, self).test()
+                elif args[0] == 'wget_industry_summary': 
                     print '\n'.join(self.wget_industry_summary(*args[1:]))
                 elif args[0] == 'wget_industry': 
                     self.wget_industry(*args[1:])
@@ -1193,7 +1369,7 @@ class YFSector(Sector):
             rows = []
 
             sector_id = self.get_sector_id(sector)
-            industry_id = self.get_industry_id(industry)
+            industry_id = self.aget_industry_id(industry)
 
             for stock in stock_list:
                 stock_id = YFStock().aget_stock_id(stock)
@@ -1856,6 +2032,8 @@ test-yfdate    Test class YFDate
 test-yfstock   Test class YFStock
 test-yfquota   Test class YFQuota
 test-yfsector  Test class YFSector 
+test-sector    Test class Sector
+test-yfstocker Test class YFStockER
 
 See 'yahoofinance.py <command> help' for more informationon a specific command.
 '''
@@ -1893,6 +2071,10 @@ if __name__ == "__main__":
     elif sys.argv[1] == 'test-sector': 
         s = Sector()
         s.test()
+
+    elif sys.argv[1] == 'test-yfstocker':
+        er = YFStockER()
+        er.test(*sys.argv[2:])
 
     elif sys.argv[1] == 'test-xxxx': 
         #def date_to_nthweekday(self, date, format='text')
