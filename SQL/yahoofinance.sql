@@ -91,6 +91,7 @@ Low              real    DEFAULT 0.0,
 Close            real    DEFAULT 0.0,
 AdjClose         real    DEFAULT 0.0,
 Volume           integer DEFAULT 0,
+/* from yahoo finance website */
 VolumeAverage3M  integer DEFAULT 0,
 VolumePerAverage real    DEFAULT 0.0,
 Amount           integer DEFAULT 0,
@@ -153,13 +154,19 @@ LEFT JOIN Sector   AS sec ON ss.SectorID=sec.SectorID
 LEFT JOIN Industry AS ind ON ss.IndustryID=ind.IndustryID;
 
 CREATE VIEW StockERView AS
-SELECT ss.StockID, s.Ticker, s.Active, s.Name, s.FYEnds, s.Beta, s.HasOption, 
-       s.Close, s.AvgVol, s.Shares, s.Floating, s.MarketCap, s.Start, s.End, 
-       src.Name as Source, sec.Name AS Sector, ind.Name AS Inudstry
+SELECT ss.StockID, 
+       s.Ticker, s.Active, s.Name, s.FYEnds, s.Beta, s.HasOption, s.Close, 
+       s.AvgVol, s.Shares, s.Floating, s.MarketCap, s.Start, s.End, 
+       src.Name AS Source, 
+       sec.Name AS Sector, 
+       ind.Name AS Inudstry,
+       er.RawDate AS ERRawDate, er.RawTime AS ERRawTime, er.ERDate AS ERDate,
+       er.FYQuarter AS ERFYQuarter, er.CYQuarter AS ERCYQuarter
 FROM StockSector   AS ss
 LEFT JOIN Stock    AS s   ON ss.StockID=s.StockID
 LEFT JOIN Source   AS src ON ss.SourceID=src.SourceID
 LEFT JOIN Sector   AS sec ON ss.SectorID=sec.SectorID
-LEFT JOIN Industry AS ind ON ss.IndustryID=ind.IndustryID;
+LEFT JOIN Industry AS ind ON ss.IndustryID=ind.IndustryID
+LEFT JOIN StockER  AS er  ON ss.StockID=er.StockID;
 
 commit;

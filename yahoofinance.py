@@ -33,6 +33,8 @@ YF_DB_FILE = '%s/yahoofinance.db' % SQL_DIR_PATH
 
 MY_LOG_FILE_NAME = '%s/yahoofinance.log' % BASE_DIR_PATH
 
+# regexp for date - YYYY-MM-DD
+RE_DATE = re.compile('^(\d\d\d\d)-(\d\d)-(\d\d)')
 
 # --------------------------------------------------------------------------- #
 # Shared functions
@@ -562,7 +564,7 @@ class YFDB(object):
         self.conn = sql.connect(YF_DB_FILE)
         self.cursor = self.conn.cursor()
         self.table = table
-        self.debug = 0
+        self.debug = 1
 
     # ----------------------------------------------------------------------- #
     def pprint(self):
@@ -981,6 +983,7 @@ class StockER(YFDB):
             wget_yfer_next_months start_day end_day
             upsert_er_record      ticker, source, day, time
             get_er_record         ticker, source, day
+            get_cy_quarter        ticker, date
             """
         else: 
             if args[0] == 'all': 
@@ -988,7 +991,7 @@ class StockER(YFDB):
                 print '!!!!!! wget_yfer_day("2016-04-26") !!!!'
                 self.wget_yfer_day("2016-04-26")
                 print '!!!!!! get_er_record("BRX", "YF", "2016-04-26") !!!!'
-                print self.get_er_record("BRX", "YF", "2016-04-26")
+                print self.get_er_record(ticker="BRX", source="YF", rawdate="2016-04-26")
             elif args[0] == 'wget_yfer_day': 
                 n = self.wget_yfer_day(*args[1:])
                 print 'er records in day:', n
@@ -996,13 +999,25 @@ class StockER(YFDB):
                 n = self.wget_yfer_range(*args[1:])
                 print 'total ER records in range:', n
             elif args[0] == 'wget_yfer_next_months': 
-                n = self.wget_yfer_next_months()
-                print 'total ER records in next 90 days:', n
+                if len(args) > 1: 
+                    m = int(args[1])
+                    n = self.wget_yfer_next_months(m)
+                else:
+                    m = 3
+                    n = self.wget_yfer_next_months()
+                print 'total ER records in next %d months:' % m, n
             elif args[0] == 'upsert_er_record': 
                 i = self.upsert_er_record(*args[1:])
                 print '%d records inserted' % i
             elif args[0] == 'get_er_record': 
-                print self.get_er_record(*args[1:])
+                for row in self.get_er_record(
+                    ticker=args[1], 
+                    source=args[2], 
+                    rawdate=args[3],
+                    erdate=args[4]):
+                    print row
+            elif args[0] == 'get_cy_quarter': 
+                print self.get_cy_quarter(*args[1:])
             else: 
                 self.test('usage')
     
@@ -1013,22 +1028,36 @@ class StockER(YFDB):
         YHOO, 2015-09
         """
 
-    # ----------------------------------------------------------------------- #
-    def get_er_record(self, ticker, source, date_):
-    
-        stock_id = self.stock_obj.get_stock_id(ticker)
-        source_id = self.sector_obj.get_source_id(source)
-
-        # if stock_id == None, just insert
-        if stock_id == None or source_id == None:
-            print 'Error: unknown ticker(%s) or source(%s)' % (ticker, source)
-            return None
-        
-        return self.fetch_one_row(sql_code="""
-            SELECT * from StockER
-            WHERE StockID=%s AND SourceID=%s and RawDate="%s"
-            """ % (stock_id, source_id, date_)
+        fy_ends = self.fetch_one_row(sql_code="""
+            SELECT FYEnds from Stock
+            WHERE Ticker="%s" and Active>0
+            """ % ticker
             )
+
+        if fy_ends == None:
+            return None
+
+        print fy_ends
+    # ----------------------------------------------------------------------- #
+    def get_er_record(self, ticker, source='YF', rawdate='', erdate='', 
+        fy_quarter='', cy_quarter=''):
+    
+        sql_code="""
+            SELECT * from StockERView
+            WHERE Ticker="%s" AND Source="%s"
+            """ % (ticker, source)
+
+        if not rawdate == '':
+            sql_code += """
+            AND ERRawDate="%s"
+            """ % rawdate
+
+        if not erdate == '':
+            sql_code += """
+            AND ERDate="%s"
+            """ % erdate
+
+        return self.fetch_many_rows(sql_code=sql_code)
     
     # ----------------------------------------------------------------------- #
     #CREATE TABLE StockER (
@@ -1099,7 +1128,7 @@ class StockER(YFDB):
         today = YFDate().today_ymd
         y,m,d = map(int, today.split('-'))
 
-        m += 3
+        m += num_months
         if m > 12:
             m = m - 12
             y += 1
@@ -1138,8 +1167,6 @@ class StockER(YFDB):
         day = re.sub('-', '', date_)
 
         url = 'http://biz.yahoo.com/research/earncal/%s.html' % day
-        if self.debug > 3:
-            print "StockER().wget_yfer_day: parsing er day html -", url
 
         p = SimpleHTMLParser(url)
 
@@ -1182,13 +1209,12 @@ class StockER(YFDB):
             elif re.search('Earnings Announcements for', line):
                 start = 1
         
-        if self.debug:
-            print 'StockER.wget_yfer_day(): %s, %d ER records' % \
-                (date_, len(rows))
-
         for row in rows:
             ticker, source, date_, time_ = row
             self.upsert_er_record(ticker, source, convert_date(date_), time_)
+
+        print 'StockER.wget_yfer_day(): ER data on !!! %s !!!, %d records' %\
+            (date_, len(rows))
 
         return len(rows)
 
@@ -1647,48 +1673,35 @@ class Sector(YFDB):
         self.conn.commit()
    
     # ----------------------------------------------------------------------- #
-    # CREATE VIEW StockView AS
-    # SELECT ss.StockID, s.Ticker, s.Active, s.Name, s.FYEnds, s.Beta, s.HasOption,
-    #      s.Close, s.AvgVol, s.Shares, s.Floating, s.MarketCap, s.Start, s.End,
-    #              src.Name as Source, sec.Name AS Sector, ind.Name AS Inudstry
-    #              FROM StockSector   AS ss
-    #              LEFT JOIN Stock    AS s   ON ss.StockID=s.StockID
-    #              LEFT JOIN Source   AS src ON ss.SourceID=src.SourceID
-    #              LEFT JOIN Sector   AS sec ON ss.SectorID=sec.SectorID
-    #              LEFT JOIN Industry AS ind ON ss.IndustryID=ind.IndustryID;
-    def get_all_ticker(self, source='YF', sector='', industry='', 
-        min_active=0):
-        '''
-        find all stickers with minium active level
-        Stock<=StockID=>StockSector<=SourceID=>Source
-        '''
-        stocks = []
-
-        return self.fetch_many("""
-            SELECT Ticker
-            FROM Stock AS s
-            LEFT OUTER JOIN StockSector AS ss ON ss.StockID=s.StockID
-            LEFT OUTER JOIN Source AS src on src.SourceID=ss.SourceID
-            WHERE src.Name="%s" and s.Active>%d
-            """ % (source, min_active)
-            )
-    
-    # ----------------------------------------------------------------------- #
-    def get_all_stock(self, source='YF', min_active=0):
+    def get_all_stock(self, source='YF', sector='', industry='', min_active=0,
+        order_by='MarketCap', order='DESC'):
         '''
         find all stickers with inputed conditions from VIEW of StockView
         '''
-        stocks = []
-
-        return self.fetch_many("""
+        sql_code = """
             SELECT Ticker
-            FROM Stock AS s
-            LEFT OUTER JOIN StockSector AS ss ON ss.StockID=s.StockID
-            LEFT OUTER JOIN Source AS src on src.SourceID=ss.SourceID
-            WHERE src.Name="%s" and s.Active>%d
+            FROM StockView
+            WHERE Source="%s" AND Active>=%d
             """ % (source, min_active)
-            )
 
+        if sector != '':
+            sql_code += """
+            AND Sector="%s"
+            """ % sector
+
+        if industry != '':
+            sql_code += """
+            AND Industry="%s"
+            """ % industry
+
+        if order_by != '':
+            sql_code += """
+            ORDER BY %s %s
+            """ % (order_by, order)
+
+        return self.fetch_many(sql_code)
+
+    # ----------------------------------------------------------------------- #
     def get_stock_sector_info_all(self, stock, source="YF"): 
         """
         based on stock ticker, return a list of stock sector info 
@@ -1866,7 +1879,7 @@ class YFSector(Sector):
             wget_all <1st # code> : get all yahoo finance of 1st code if present
             wget_industry_summary : get list of yhaoo finance ind codes
             wget_industry  <code> : get yahoo finance industry info
-            get_all_stock <active>: get all stock tickers
+            get_all_stock <active>: source sector industry minactive orderby, order
             """
         else: 
             try: 
@@ -1879,11 +1892,13 @@ class YFSector(Sector):
                 elif args[0] == 'wget_all': 
                     self.wget_all(*args[1:])
                 elif args[0] == 'get_all_stock': 
-                    all_stock = self.get_all_stock("YF", args[1:])
-                    if len(all_stock) > 30: 
-                        print len(self.get_all_stock("YF", *args[1:]))
-                    else:
-                        print all_stock
+                    all_stock = self.get_all_stock(
+                        source=args[1],
+                        sector=args[2],
+                        industry=args[3],
+                        min_active=int(args[4])
+                        )
+                    print all_stock
                 else:
                     self.test('usage')
             except:
@@ -2028,18 +2043,17 @@ class YFQuota(YFDB):
     Yahoofinance Historic Date Class, download, store and read stock
     daliy historic data from yahoofinance.com
     '''
-    debug = 0
+    debug = 1
     # ----------------------------------------------------------------------- #
     def __init__(self):
         YFDB.__init__(self, 'DailyQuota')
-        self.re_date = re.compile('^(\d\d\d\d)-(\d\d)-(\d\d)')
 
         self.stock_obj = YFStock()
-        self.debug = 10 
+        self.debug = 3
         self.yfdate = YFDate()
     
     # ----------------------------------------------------------------------- #
-    def test(self, *args):
+    def run(self, *args):
         if len(args) < 1 or re.search('usage|help', args[0]):
             print """yahoofinance.py test-yfquota <method> <args>
             wget_daily      <ticker>
@@ -2054,17 +2068,18 @@ class YFQuota(YFDB):
                 if args[0] == 'wget_daily': 
                     print self.wget_daily(*args[1:])
                 elif args[0] == '_wget_daily': 
-                    print self._wget_daily(*args[1:])
+                    print self._wget_daily(ticker=args[1])
                 elif args[0] == 'get_daily': 
                     rows = self.get_daily(*args[1:])
                     if rows and len(rows): 
-                        pprint_name_value(['#', 'start', 'end'], [len(rows), rows[0], rows[-1]])
+                        pprint_name_value(['#', 'start', 'end'], 
+                        [len(rows), rows[0], rows[-1]])
                     else:
                         print 'no rows retrieved'
                 elif args[0] == 'delete': 
                     self.delete(*args[1:])
                 elif args[0] == 'wget_daily_all': 
-                    self.wget_daily_all(*args[1:])
+                    self.wget_daily_all()
                 elif args[0] == 'do_calculation': 
                     self.do_calculation(*args[1:])
                 else:
@@ -2088,14 +2103,20 @@ class YFQuota(YFDB):
             WHERE StockID=%s """ % (stock_id)
 
             if end_ymd != '' and end_ymd != '0000-00-00':
-                sql_cmd += ' AND Date<="%s"' % end_ymd
+                sql_cmd += """
+                AND Date<="%s"
+                """ % end_ymd
 
             if start_ymd != '' and start_ymd != '0000-00-00':
-                sql_cmd += ' AND Date>="%s"' % start_ymd
+                sql_cmd += """
+                AND Date>="%s"
+                """ % start_ymd
            
-            sql_cmd += "\nORDER by Date"
+            sql_cmd += """
+            ORDER by Date
+            """
 
-            if self.debug > 2:
+            if self.debug > 5:
                 print 'YFQuota.get_daily() - SQL command:', sql_cmd
 
             return self.fetch_many_rows(sql_code=sql_cmd)
@@ -2140,7 +2161,7 @@ class YFQuota(YFDB):
         rows = cursor.fetchall()
 
         if len(rows) == 0 and wget_if_none:
-            self._wget_daily(ticker)
+            self._wget_daily(ticker=ticker)
 
             cursor.execute(sql_cmd) 
             rows = cursor.fetchall()
@@ -2217,27 +2238,45 @@ class YFQuota(YFDB):
 
     # ----------------------------------------------------------------------- #
     def wget_daily(self, ticker='^GSPC'):
+        """
+        This is a wrapper of _wget_daily():
+        1) get existing rows of this ticker;
+        2) only wget rows between last row and last row of sp days
+        """
 
-        stock_id = YFStock().aget_stock_id(ticker)
-        if stock_id == None:
-            # if stock_id is None, not a valid ticker in table
+        # if invalid ticker, return None
+        if YFStock().aget_stock_id(ticker) == None:
             return None
         
         rows = self.get_daily(ticker)
         
+        # len(rows) == 0, means not no records in db
         if rows == None or len(rows) == 0:
-            # len(rows) == 0, means not no records in db
-            return self._wget_daily(ticker)
+            start_date = START_DATE
+            if self.debug > 2:
+                print "YFQuota.wget_daily(): no records for ticker -", ticker,\
+                    "so using -", start_date
         else:
             # if we have records, only get records btwn last day and today
-            last_date = rows[-1][1]
-            return self._wget_daily(ticker, TODAY_YMD, rows[-1][1])
+            start_date = rows[-1][1]
+            if self.debug > 2:
+                print "YFQuota.wget_daily(): start_date for ticker -", ticker,\
+                    "is", start_date
+       
+        end_date = self.yfdate.sp_days[-1]
 
+        n = 0
+        if start_date < end_date: 
+            n = self._wget_daily(ticker=ticker, start_ymd=start_date, \
+                end_ymd= end_date)
+
+        if self.debug > 2: 
+            print "YFQuota.wget_daily(): wget", n, "records from YF"
+       
+        return n
     # ----------------------------------------------------------------------- #
     @classmethod
-    def _wget_daily(self, ticker='^GSPC', end_ymd = '', start_ymd=''):
-        re_date = re.compile('^(\d\d\d\d)-(\d\d)-(\d\d)')
-
+    def _wget_daily(self, ticker='^GSPC', start_ymd='', end_ymd = ''):
         '''
         The real function to wget yahoofinance historic Quota. 
 
@@ -2260,21 +2299,25 @@ class YFQuota(YFDB):
         url: http://real-chart.finance.yahoo.com/table.csv?
              s=%s&d=12&e=1&f=9999&g=d&a=0&b=1&c=1900&ignore=.csv
         '''
+        stock_id = YFStock().aget_stock_id(ticker)
 
-        # assign a/b/c/d/e/f to default values in case no dates specfied
-        c, a, b = map(int, '1953-01-01'.split('-'))
-        f, d, e = map(int, TODAY_YMD.split('-'))
+        if not stock_id:
+            print 'ERROR YFQuota._wget_daily: invalid ticker - %s' % ticker
+            return 0
 
-        # assign c/a/b based on start_ymd
-        re1 = re_date.match(start_ymd)
-        if re1:
-            c, a, b = map(int, re1.groups())
+        # assign c/a/b based on start_ymd, if not given, use START_DATE
+        start_is_date = RE_DATE.match(start_ymd)
+        if not start_is_date:
+            start_ymd = START_DATE
+        c, a, b = map(int, start_ymd.split('-'))
 
-        # assign f/d/e based on end_ymd
-        re2 = re_date.match(end_ymd)
-        if re2:
-            f, d, e = map(int, re2.groups())
-       
+        # assign f/d/e based on end_ymd, if not given, use TODAY_YMD
+        end_is_date = RE_DATE.match(end_ymd)
+        if not end_is_date:
+            end_ymd = TODAY_YMD 
+        f, d, e = map(int, end_ymd.split('-'))
+      
+        # construct url parameters
         params = urlencode({ 
             's': ticker,
             'a': a - 1,
@@ -2289,36 +2332,31 @@ class YFQuota(YFDB):
         
         url = 'http://ichart.yahoo.com/table.csv?%s' % params
         
-        if self.debug:
-            print url
-
         req = Request(url)
         try: 
             response = urlopen(req) 
             data = str(response.read().decode('utf-8').strip()) 
         except: 
-            print 'Error to wget yahoo historic quota for %s' % ticker
-            print 'url -> %s' % url
+            print 'ERROR YFQuota._wget_daily: wget historic quota - %s, %s' \
+                % (ticker, url)
             return 
         
         rows = []
          
         for line in data.splitlines(): 
-            # match the DATE in date line 
-            re3 = re_date.match(line)
+            date_ = line.split(',')[0]
 
-            # if not match ^2014-01-01, skip this line
-            if re3: 
-                date_ = re3.group() 
-                
-                if (end_ymd == '' or date_ <= end_ymd) and \
-                    (start_ymd == '' or date_ >= start_ymd):
-                    rows.append(line)
-       
+            # if first item is date, and between star/end, save it
+            if RE_DATE.match(date_) and date_ <= end_ymd and \ 
+                date_ >= start_ymd: 
+                rows.append(line)
+     
+        self.update_daily(ticker=ticker, rows=rows)
+
+    self.update_daily(self, ticker='^GSPC', rows):
         conn = sql.connect(YF_DB_FILE)
         cursor = conn.cursor()
 
-        stock_id = YFStock().aget_stock_id(ticker)
         if len(rows): 
             rows_ = []
             for row in rows:
@@ -2332,15 +2370,32 @@ class YFQuota(YFDB):
                 )
     
             conn.commit()
-        else:
-            return 0
 
-    def wget_daily_all(self, source='YF', min_active=0):
-        yfs = YFSector()
-        all_stocks = yfs.get_all_stock(source, min_active)
+        if self.debug:
+            print 'YFQuota._wget_daily: get %d records from %s' % (len(rows),
+                url)
 
+        return len(rows)
+
+    def wget_daily_all(self):
+        """
+        get daily historic data from yahoo finance
+        """
+
+        # 1st to update SP500 data
+        if self.debug: 
+            print "YFQuota.wget_daily_all(): wget daily quota - SP500"
+        self.wget_daily('^GSPC')
+
+        # load self.yfdate again to have latest sp_days[-1]
+        self.yfdate.load_sp_days()
+
+        all_stocks = YFSector().get_all_stock(source='YF', min_active=0)
+
+        #YG
         for stock in all_stocks:
-            print 'download yahoo finance daily - %s' % stock
+            if self.debug: 
+                print "YFQuota.wget_daily_all(): wget daily quota -", stock
             self.wget_daily(stock)
 
     # ----------------------------------------------------------------------- #
@@ -2838,6 +2893,8 @@ class YFDate:
         if len(rows):
             for line in rows:
                 self.sp_days.append(line[1])
+        else:
+            self.sp_days.append("0000-00-00")
         
         #self.sp_days.reverse() 
     # ----------------------------------------------------------------------- #
@@ -3087,15 +3144,15 @@ def usage():
 usage: yahoofinance.py <command> [<args>]
 
 The most commonly used yahoofinance commands are: 
-test-shared       Test shared functions 
-test-yfdate       Test class YFDate 
-test-yfstock      Test class YFStock
-test-yfquota      Test class YFQuota
-test-yfsector     Test class YFSector 
-test-sector       Test class Sector
-test-stocker      Test class StockER
-test-insider      Test class Insider
-test-insidertrans Test class Insider
+shared       Test shared functions 
+yfdate       Test class YFDate 
+yfstock      Test class YFStock
+yfquota      Test class YFQuota
+yfsector     Test class YFSector 
+sector       Test class Sector
+stocker      Test class StockER
+insider      Test class Insider
+insidertrans Test class Insider
 
 See 'yahoofinance.py <command> help' for more informationon a specific command.
 '''
@@ -3111,42 +3168,42 @@ if __name__ == "__main__":
         usage()
         sys.exit(0)
 
-    elif sys.argv[1] == 'test-shared': 
+    elif sys.argv[1] == 'shared': 
         test_shared_func(*sys.argv[2:])
 
-    elif sys.argv[1] == 'test-yfdate': 
+    elif sys.argv[1] == 'yfdate': 
         d = YFDate()
         d.test(*sys.argv[2:])
 
-    elif sys.argv[1] == 'test-yfstock': 
+    elif sys.argv[1] == 'yfstock': 
         s = YFStock()
         s.test(*sys.argv[2:])
 
-    elif sys.argv[1] == 'test-yfquota': 
+    elif sys.argv[1] == 'yfquota': 
         hd = YFQuota()
-        hd.test(*sys.argv[2:])
+        hd.run(*sys.argv[2:])
 
-    elif sys.argv[1] == 'test-yfsector': 
+    elif sys.argv[1] == 'yfsector': 
         s = YFSector()
         s.test(*sys.argv[2:])
 
-    elif sys.argv[1] == 'test-sector': 
+    elif sys.argv[1] == 'sector': 
         s = Sector()
         s.test(*sys.argv[2:])
 
-    elif sys.argv[1] == 'test-stocker':
+    elif sys.argv[1] == 'stocker':
         er = StockER()
         er.test(*sys.argv[2:])
 
-    elif sys.argv[1] == 'test-insider': 
+    elif sys.argv[1] == 'insider': 
         i = YFInsider()
         i.test()
 
-    elif sys.argv[1] == 'test-insidertrans': 
+    elif sys.argv[1] == 'insidertrans': 
         it = YFInsiderTransaction()
         it.test(*sys.argv[2:])
 
-    elif sys.argv[1] == 'test-xxxx': 
+    elif sys.argv[1] == 'xxxx': 
         #def date_to_nthweekday(self, date, format='text')
         if len(sys.argv) > 2 and sys.argv[2] == 'date_to_nthweekday':
             print d.date_to_nthweekday(*sys.argv[3:])
