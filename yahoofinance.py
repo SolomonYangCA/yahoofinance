@@ -15,12 +15,18 @@ import re
 import sys
 import math
 import time
+import numpy as np
+import bisect
 import datetime
 import sqlite3 as sql
 
-# all dates starting from 1950, when SP500 starts
+# all dates starting from 1950, when SP500@YahooFinance starts
 START_YEAR = 1950
-START_DATE = '1950-01-01'
+START_DATE = '1950-01-03'
+NUM_T_DAYS_ONE_MONTH = 21
+NUM_T_DAYS_ONE_QUARTER = 63
+NUM_T_DAYS_ONE_YEAR = 252
+
 TODAY_YMD, TODAY_YM, LAST_TRADE_DAY = '', '', ''
 
 # LOCAL | yahoofinance
@@ -133,11 +139,11 @@ def test_shared_func(*args):
 
                 list_title.append('=================>')
                 list_value.append('YFQuota.static_get_daily()')
-                list_title.append('YFQuota.static_get_daily()')
-                list_value.append('%d:%s-%s' % (
-                    len(YFQuota.static_get_daily()),
-                    YFQuota.static_get_daily()[0][1],  
-                    YFQuota.static_get_daily()[-1][1]))
+#                list_title.append('YFQuota.static_get_daily()')
+#                list_value.append('%d:%s-%s' % (
+#                    len(YFQuota.static_get_daily()),
+#                    YFQuota.static_get_daily()[0][1],  
+#                    YFQuota.static_get_daily()[-1][1]))
                 
                 pprint_name_value(list_title, list_value)
             elif args[0] == 'correlation': 
@@ -419,6 +425,17 @@ def get_today_dates():
 
     return (ymd, ym)
 
+
+# --------------------------------------------------------------------------- #
+def percentage(v, b):
+    """
+    calculate percentage 100*(v-b)/b
+    """
+    if float(b) == 0.0:
+        return 0.0
+    else:
+        return 100.0 * (float(v) - float(b)) / float(b)
+
 # --------------------------------------------------------------------------- #
 def average(list_float): 
     """
@@ -594,15 +611,15 @@ class YFDB(object):
         return row
 
     # ----------------------------------------------------------------------- #
-    def fetch_many_rows(self, sql_code, exit_if_none=False, error_msg=None):
+    def fetch_many_rows(self, sql_code='', exit_if_none=False, error_msg=''):
         """
-        Just fetch one row from sql code
+        Just fetch multiple row from sql code
         """
         self.cursor.execute(sql_code)
         
         rows = self.cursor.fetchall() 
 
-        if not rows and error_msg:
+        if not rows and error_msg != '':
             print error_msg
 
         if not rows and exit_if_none:
@@ -981,9 +998,9 @@ class StockER(YFDB):
             wget_yfer_day         day (ike '2015-10-27' or '20151027')
             wget_yfer_range       start_day end_day
             wget_yfer_next_months start_day end_day
-            upsert_er_record      ticker, source, day, time
+            insert_raw_er_record  ticker, source, day, time
             get_er_record         ticker, source, day
-            get_cy_quarter        ticker, date
+            do_cyfy_quarter       
             """
         else: 
             if args[0] == 'all': 
@@ -1006,8 +1023,8 @@ class StockER(YFDB):
                     m = 3
                     n = self.wget_yfer_next_months()
                 print 'total ER records in next %d months:' % m, n
-            elif args[0] == 'upsert_er_record': 
-                i = self.upsert_er_record(*args[1:])
+            elif args[0] == 'insert_raw_er_record': 
+                i = self.insert_raw_er_record(*args[1:])
                 print '%d records inserted' % i
             elif args[0] == 'get_er_record': 
                 for row in self.get_er_record(
@@ -1016,11 +1033,52 @@ class StockER(YFDB):
                     rawdate=args[3],
                     erdate=args[4]):
                     print row
-            elif args[0] == 'get_cy_quarter': 
-                print self.get_cy_quarter(*args[1:])
+            elif args[0] == 'do_cyfy_quarter': 
+                print self.do_cyfy_quarter()
             else: 
                 self.test('usage')
     
+    # ----------------------------------------------------------------------- #
+    #CREATE TABLE StockER (
+    #StockID   integer NOT NULL,
+    #SourceID  integer NOT NULL,
+    #RawDate   char(10),
+    #RawTime   char(20),
+    #FYQuarter char(6),
+    #CYQuarter char(6),
+    #ERDate    char(10),
+    def do_cyfy_quarter(self):
+        self.cursor.execute("""
+        SELECT * FROM StockER 
+        WHERE FYQuarter is NULL or CYQuarter is NULL or FYQuarter like "%Q9"
+        """)
+
+        count_write = 0
+        for row in self.cursor.fetchall():
+            stock_id, source_id, rawdate, rawtime, fy, cy, erate = row
+            
+            self.cursor.execute("""
+            SELECT Ticker, FYEnds
+            FROM Stock
+            WHERE StockID=?""", (stock_id, ))
+
+            t, fyend = self.cursor.fetchone()
+
+            (fy, cy) = YFDate().get_FYCY_quarters(date_ymd=rawdate, 
+                FY_ends=fyend, ticker=t)
+
+            self.cursor.execute("""
+            UPDATE StockER
+            SET FYQuarter=?, CYQuarter=?
+            WHERE StockID=? AND SourceID=? AND RawDate=? AND RawTime=?
+            """, (fy, cy, stock_id, source_id, rawdate, rawtime) )
+
+            self.conn.commit()
+
+            count_write += self.cursor.rowcount 
+        
+        return count_write
+
     # ----------------------------------------------------------------------- #
     def get_cy_quarter(self, ticker, date_):
         """
@@ -1057,68 +1115,50 @@ class StockER(YFDB):
             AND ERDate="%s"
             """ % erdate
 
-        return self.fetch_many_rows(sql_code=sql_code)
+        rows = self.fetch_many_rows(sql_code=sql_code)
+        
+        return rows
     
     # ----------------------------------------------------------------------- #
-    #CREATE TABLE StockER (
-    #StockID   integer NOT NULL,
-    #SourceID  integer NOT NULL,
-    #RawDate   char(10),
-    #RawTime   char(20),
-    #FYQuarter char(6),
-    #CYQuarter char(6),
-    #ERDate    char(10),
-    #FOREIGN KEY(StockID)  REFERENCES Stock(StockID),
-    #FOREIGN KEY(SourceID) REFERENCES Source(SourceID)
-    #);
-    def upsert_er_record(self, ticker, source, date_, time):
+    def get_raw_er_record(self, sourceid=1, stockid=0, rawdate='', rawtime=''):
+
+        self.cursor.execute("""
+        SELECT * from StockER 
+        WHERE StockID=? AND SourceID=? AND RawDate=? AND RawTime=?
+        """, (stockid, sourceid, rawdate, rawtime))
+
+        return self.cursor.fetchall()
+    # ----------------------------------------------------------------------- #
+    def insert_raw_er_record(self, ticker='', source='YF', er_date='', 
+        er_time=''):
         stock_id = self.stock_obj.get_stock_id(ticker)
         source_id = self.sector_obj.get_source_id(source)
 
         # if stock_id == None, invalid ticker, report it the return
-        if stock_id == None:
-            print 'Error StockER.upsert_er_record(): unknown ticker - %s' % ticker, date_, time
+        if stock_id == None or source_id == None:
+            if self.debug: 
+                print 'E.insert_raw_er_record(): unknown ticker/source - %s %s %s %s'\
+                    % ticker, source, er_date, er_time
             return 0
 
-        # if source_id == None, invalid source, report it the return
-        if source_id == None:
-            print 'Error StockER.upsert_er_record(): invalid source - %s' % source
-            print ticker, source, date_, time
-            return 0
+        # only insert if no such record, to avoid clear out calculate ER 
+        # date/time
+        er_records = self.get_raw_er_record(stockid=stock_id, 
+            sourceid=source_id, rawdate=er_date, rawtime=er_time)
 
-        if self.debug > 3: 
-            print "er info", ticker, source, date_, time 
+        row_count = 0
 
-        if self.get_er_record(ticker, source, date_):
-            r = self.cursor.execute("""
-                UPDATE StockER 
-                SET RawTime=?
-                WHERE 
-                    StockID=? AND
-                    SourceID=? AND
-                    RawDate=?
-                """, (time, stock_id, source_id, date_)
-            )
-            if self.debug > 3: 
-                print "update er recode"
-        else:
+        if er_records == None or len(er_records) == 0:
             r = self.cursor.execute("""
                 INSERT INTO StockER 
                 (StockID, SourceID, RawDate, RawTime)
                 VALUES (?, ?, ?, ?) 
-                """, (stock_id, source_id, date_, time)
+                """, (stock_id, source_id, er_date, er_time)
             )
-            if self.debug > 3: 
-                print "insert er recode"
-                print """
-                INSERT INTO StockER 
-                (StockID, SourceID, RawDate, RawTime)
-                VALUES (%d, %d, %s, %s) 
-                """ %  (stock_id, source_id, date_, time) 
-                print "insert er recode"
-        
-        self.conn.commit() 
-        return r.rowcount
+            row_count = r.rowcount
+            self.conn.commit() 
+
+        return row_count
 
     # ----------------------------------------------------------------------- #
     def wget_yfer_next_months(self, num_months=3):
@@ -1143,28 +1183,30 @@ class StockER(YFDB):
         Get all ER data in range
         """
 
-        if self.debug:
-            print "StockER.wget_yfer_range(): %d days to wget_yfer_day()" %\
-            len(range_day(start, end))
-       
-        num_record = 0
         num_day = 0
+        num_write, num_er = 0, 0
 
-        for date_ in range_day(start, end):
+        for date_ymd in range_day(start, end):
             num_day += 1
-            num_record += self.wget_yfer_day(date_)
 
-        return num_record
+            w, n = self.wget_yfer_day(date_ymd=date_ymd)
+            print "day#%03d: %s, read:%3d, write:%3d" % \
+                (num_day, date_ymd, n, w)
+
+            num_write += w
+            num_er += n
+
+        return (num_write, num_er)
                 
     # ----------------------------------------------------------------------- #
-    def wget_yfer_day(self, date_):
+    def wget_yfer_day(self, date_ymd=''):
         """
         Get all ER stock on the day from url:
         http://biz.yahoo.com/research/earncal/20150612.html
         """
 
-        # date_ is the yyyy-mm-dd, convert it to yyyymmdd
-        day = re.sub('-', '', date_)
+        # date_ymd is the yyyy-mm-dd, convert it to yyyymmdd
+        day = re.sub('-', '', date_ymd)
 
         url = 'http://biz.yahoo.com/research/earncal/%s.html' % day
 
@@ -1195,28 +1237,34 @@ class StockER(YFDB):
                 # There is 2 format in yahoo finance ER cal, so we try both
                 # 4 columns: |Company Name| TICK|EPS|Time|
                 # 3 columns: |Company Name| TICK|Time|
-                time_ = self.get_er_time_from_2items(items[3], second_time,
+                er_time = self.get_er_time_from_2items(items[3], second_time,
                     ticker)
 
                 # if not valid time string, skip
-                if not time_:
+                if not er_time:
                     continue
                 
                 # ok, reach here it is a valid ER record 
-                rows.append((ticker, 'YF', date_, time_))
+                rows.append((ticker, 'YF', date_ymd, er_time))
 
             # start to parse if seen "Earning Announcment'
             elif re.search('Earnings Announcements for', line):
                 start = 1
         
+        num_write = 0
         for row in rows:
-            ticker, source, date_, time_ = row
-            self.upsert_er_record(ticker, source, convert_date(date_), time_)
+            ticker, source, date_ymd, er_time = row
 
-        print 'StockER.wget_yfer_day(): ER data on !!! %s !!!, %d records' %\
-            (date_, len(rows))
+            w = self.insert_raw_er_record(ticker=ticker, source=source, \
+                er_date=convert_date(date_ymd), er_time=er_time)
 
-        return len(rows)
+            num_write += w
+
+        if self.debug > 3: 
+            print 'L.StockER.wget_yfer_day(): # of ER on %s - %d/%d' %\
+            (date_ymd, num_write, len(rows))
+
+        return (num_write, len(rows))
 
     # ----------------------------------------------------------------------- #
     def get_er_time_from_2items(self, str1, str2, ticker=''):
@@ -2049,14 +2097,15 @@ class YFQuota(YFDB):
         YFDB.__init__(self, 'DailyQuota')
 
         self.stock_obj = YFStock()
-        self.debug = 3
+        self.debug = 0
         self.yfdate = YFDate()
     
     # ----------------------------------------------------------------------- #
     def run(self, *args):
         if len(args) < 1 or re.search('usage|help', args[0]):
-            print """yahoofinance.py test-yfquota <method> <args>
+            print """yahoofinance.py YFQuota <method> <args>
             wget_daily      <ticker>
+            _wget_daily     <tciker> <start_ymd> <end_ymd>
             get_daily       <ticker> [<end_ymd>] [<start_ymd>]
             delete_daily    <ticker> [<end_ymd>] [<start_ymd>]
             wget_daily_all  get all yahoo finance of 1st code if present
@@ -2066,9 +2115,23 @@ class YFQuota(YFDB):
         else:
             try: 
                 if args[0] == 'wget_daily': 
-                    print self.wget_daily(*args[1:])
+                    n = self.wget_daily(ticker=args[1], 
+                        force_wget=int(args[2]))
+                    print "L.YFQuota.wget_daily: %d records from YF" % n
                 elif args[0] == '_wget_daily': 
-                    print self._wget_daily(ticker=args[1])
+                    if len(args) > 1:
+                        kwa = {}
+
+                        kwa['ticker']=args[1]
+                        if len(args) > 2: 
+                            kwa['start_ymd']=args[2] 
+                        if len(args) > 3: 
+                            kwa['end_ymd']=args[3]
+                        
+                        print self._wget_daily(**kwa)
+                    else:
+                        self.run('help') 
+
                 elif args[0] == 'get_daily': 
                     rows = self.get_daily(*args[1:])
                     if rows and len(rows): 
@@ -2083,7 +2146,7 @@ class YFQuota(YFDB):
                 elif args[0] == 'do_calculation': 
                     self.do_calculation(*args[1:])
                 else:
-                    self.test('help')
+                    self.run('help')
             except:
                 raise
                 #self.test('help')
@@ -2097,6 +2160,7 @@ class YFQuota(YFDB):
         """
         stock_id = YFStock().get_stock_id(ticker)
 
+        print start_ymd, end_ymd
         if stock_id:
             sql_cmd = """
             SELECT * FROM DailyQuota 
@@ -2116,7 +2180,7 @@ class YFQuota(YFDB):
             ORDER by Date
             """
 
-            if self.debug > 5:
+            if self.debug > 5 :
                 print 'YFQuota.get_daily() - SQL command:', sql_cmd
 
             return self.fetch_many_rows(sql_code=sql_cmd)
@@ -2134,7 +2198,6 @@ class YFQuota(YFDB):
         """
         debug_level = 0
 
-        # YG
         stock_id = YFStock().get_stock_id(ticker)
 
         conn = sql.connect(YF_DB_FILE)
@@ -2154,7 +2217,7 @@ class YFQuota(YFDB):
         sql_cmd += "\nORDER by Date"
 
         if debug_level > 2: 
-            print 'YFQuota.static_get_daily() - SQL command:', sql_cmd
+            print 'L.YFQuota.static_get_daily() - SQL command:', sql_cmd
 
         #return self.fetch_many_rows(sql_code=sql_cmd)
         cursor.execute(sql_cmd)
@@ -2237,7 +2300,7 @@ class YFQuota(YFDB):
             return 0
 
     # ----------------------------------------------------------------------- #
-    def wget_daily(self, ticker='^GSPC'):
+    def wget_daily(self, ticker='^GSPC', force_wget=0):
         """
         This is a wrapper of _wget_daily():
         1) get existing rows of this ticker;
@@ -2245,10 +2308,13 @@ class YFQuota(YFDB):
         """
 
         # if invalid ticker, return None
-        if YFStock().aget_stock_id(ticker) == None:
+        if YFStock().aget_stock_id(ticker) == None: 
+            print "E.YFQuota.wget_daily(): invalid ticker - ", ticker
             return None
-        
-        rows = self.get_daily(ticker)
+      
+        rows = []
+        if not force_wget: 
+            rows = self.get_daily(ticker)
         
         # len(rows) == 0, means not no records in db
         if rows == None or len(rows) == 0:
@@ -2274,6 +2340,7 @@ class YFQuota(YFDB):
             print "YFQuota.wget_daily(): wget", n, "records from YF"
        
         return n
+    
     # ----------------------------------------------------------------------- #
     @classmethod
     def _wget_daily(self, ticker='^GSPC', start_ymd='', end_ymd = ''):
@@ -2284,8 +2351,8 @@ class YFQuota(YFDB):
         call this function to wget contents
 
         url: http://real-chart.finance.yahoo.com/table.csv?
-             s=NMBL&d=3&e=1&f=2015&g=d&a=11&b=13&c=2013&ignore=.csv
-        NMBL: 2013-12-13 to 2015-3-31
+             s=CSCO&d=3&e=1&f=2015&g=d&a=11&b=13&c=2013&ignore=.csv
+        CSCO: 2013-12-13 to 2015-3-31
 
         a = start_month - 1
         b = start_day 
@@ -2295,28 +2362,59 @@ class YFQuota(YFDB):
         f = end_year
 
         if no start/end specified, use: 1900-0-1 to 9999-12-1
-
-        url: http://real-chart.finance.yahoo.com/table.csv?
-             s=%s&d=12&e=1&f=9999&g=d&a=0&b=1&c=1900&ignore=.csv
         '''
-        stock_id = YFStock().aget_stock_id(ticker)
+        debug_level = 0
+        # ================================================================== # 
+        # Part 0: prepare
+        # ================================================================== # 
 
-        if not stock_id:
-            print 'ERROR YFQuota._wget_daily: invalid ticker - %s' % ticker
-            return 0
+        # establish conn to DB
+        conn = sql.connect(YF_DB_FILE)
+        cursor = conn.cursor()
 
+        # 0.1 stocker_id, FYEnds, start, end
+        #
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # ! we don't check if multiple records here, need to check in !
+        # ! class YFStock                                             !
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        #
+        cursor.execute(
+            """
+            SELECT StockID, FYEnds, Start, End
+            FROM Stock 
+            WHERE Ticker=? AND Active>0
+            """, (ticker,)
+            )
+
+        row = cursor.fetchone()
+
+        if row == None or len(row) == 0:
+            print 'E.YFQuota._wget_daily: invalid ticker - %s' % ticker
+            return -1
+
+        stock_id, fy_ends, start, end = row
+
+        # 0.2 start_date -> c/a/b in html
+        #
         # assign c/a/b based on start_ymd, if not given, use START_DATE
         start_is_date = RE_DATE.match(start_ymd)
         if not start_is_date:
             start_ymd = START_DATE
         c, a, b = map(int, start_ymd.split('-'))
 
+        # 0.3 end_date -> f/d/e
+        #
         # assign f/d/e based on end_ymd, if not given, use TODAY_YMD
         end_is_date = RE_DATE.match(end_ymd)
         if not end_is_date:
             end_ymd = TODAY_YMD 
         f, d, e = map(int, end_ymd.split('-'))
       
+        # ================================================================== # 
+        # Part 1: download daily quota from YF
+        # ================================================================== # 
+
         # construct url parameters
         params = urlencode({ 
             's': ticker,
@@ -2329,54 +2427,403 @@ class YFQuota(YFDB):
             'g': 'd', 
             'ignore': '.csv', 
         }) 
-        
+       
+        # get url
         url = 'http://ichart.yahoo.com/table.csv?%s' % params
         
+        # read url 
         req = Request(url)
         try: 
             response = urlopen(req) 
             data = str(response.read().decode('utf-8').strip()) 
         except: 
-            print 'ERROR YFQuota._wget_daily: wget historic quota - %s, %s' \
+            print 'E.YFQuota._wget_daily: wget historic quota - %s, %s' \
                 % (ticker, url)
-            return 
-        
+            return -1
+       
+        # ================================================================== # 
+        # Part 2: pre-process daily quota, only keep valid records in rows
+        # ================================================================== # 
         rows = []
-         
         for line in data.splitlines(): 
             date_ = line.split(',')[0]
 
             # if first item is date, and between star/end, save it
-            if RE_DATE.match(date_) and date_ <= end_ymd and \ 
+            if RE_DATE.match(date_) and date_ <= end_ymd and \
                 date_ >= start_ymd: 
                 rows.append(line)
-     
-        self.update_daily(ticker=ticker, rows=rows)
 
-    self.update_daily(self, ticker='^GSPC', rows):
-        conn = sql.connect(YF_DB_FILE)
-        cursor = conn.cursor()
+        # if 0 records, return 0
+        if len(rows) == 0:
+            print 'W.YFQuota._wget_daily: get 0 valid records from YF -', \
+                ticker, start_ymd, end_ymd
+            return 0
 
-        if len(rows): 
-            rows_ = []
-            for row in rows:
-                rows_.append([stock_id] + row.split(','))
+        # ================================================================== # 
+        # Part 3: process raw data and do calculations
+        # ================================================================== # 
+
+        # sort the rows, to make sure earlier to later
+        rows.sort()
+        
+        first_date, o, h, l, c, first_vol, first_adj_close\
+            = rows[0].split(',')
     
-            r = cursor.executemany("""
-                INSERT OR REPLACE INTO DailyQuota 
-                (StockID, Date, Open, High, Low, Close, Volume, AdjClose)
-                VALUES (?,?,?,?,?,?,?,?)
-                """, tuple(rows_)
+        #
+        # get last 1 year records to form the base for calculation
+        #
+        cursor.execute("""
+            SELECT Date, Volume, AdjClose, Pert1Day
+            FROM DailyQuota
+            WHERE Date<? AND StockID=?
+            ORDER BY Date DESC
+            LIMIT ?
+            """, (first_date, stock_id, NUM_T_DAYS_ONE_YEAR)
+            )
+
+        rows_last_year = cursor.fetchall()
+        len_rows_last_year = len(rows_last_year)
+   
+        # 
+        # if w/ historic records, convert rows to seperate lists: 
+        # 1)date, 2)vol, 3)close, 4)pert_of_1day
+        # 
+        # if there is no historic records (the frist time to wget), we create
+        # empty lists
+        #
+        # And we get last_date, last_vol, last_adj_close, last_pert_1day
+        # to fill up 1 year list
+        #
+        if len_rows_last_year: 
+            list_date, list_vol, list_adj_close, list_pert_1day \
+                = zip(*rows_last_year)
+            last_date = list_date[0]
+            last_vol = list_vol[0]
+            last_adj_close = list_adj_close[0]
+            last_pert_1day = 0.0
+        else:
+            list_date, list_vol, list_adj_close, list_pert_1day \
+                = [], [], [], []
+            last_date = first_date
+            last_vol = first_vol
+            last_adj_close = first_adj_close
+            last_pert_1day = 0.0
+      
+        #
+        # Now fill up list_date|vol|adj_close|pert_1day to 1 year
+        #
+        list_date      = [last_date]      * (252 - len_rows_last_year) + \
+            list(list_date)
+        list_vol       = [last_vol]       * (252 - len_rows_last_year) + \
+            list(list_vol)
+        list_adj_close = [last_adj_close] * (252 - len_rows_last_year) + \
+            list(list_adj_close)
+        list_pert_1day = [last_pert_1day] * (252 - len_rows_last_year) + \
+            list(list_pert_1day)
+        
+        print list_date
+        list_vol = map(int, list_vol)
+        list_adj_close = map(float, list_adj_close)
+
+        if debug_level > 5 or first_date > "2015-09-29":
+            print '!!!!!!!!!!!!!! before process !!!!!!!!!!!!!!!!!!!'
+            print 'url->', url
+            print '\n'.join(rows[:3])
+            print '........'
+            print '\n'.join(rows[-3:])
+            print 'first date-->', first_date
+            print "# rows YF:", len(rows), "  # sql: ", len(rows_last_year)
+
+        # ================================================================== # 
+        # Core Part: process each row of raw data and do calculations
+        # ================================================================== # 
+        rows_to_update = []
+        counter = 0
+        for row in rows:
+            # ============================================================== #
+            # O/H/L/C/V/AC...: upper char ==> raw contents
+            # o/h/l/c/v/ac...: lower char ==> processed data for sql insert
+            # ============================================================== #
+
+            # First 7 columns from rows, just convert to float/int
+            #
+            # Date             char(10),
+            # Open             real    DEFAULT 0.0,
+            # High             real    DEFAULT 0.0,
+            # Low              real    DEFAULT 0.0,
+            # Close            real    DEFAULT 0.0,
+            # AdjClose         real    DEFAULT 0.0,
+            # Volume           integer DEFAULT 0,
+            #
+            d, O, H, L, C, V, AC = row.split(',')
+            o, h, l, c, ac = map(float, [O, H, L, C, AC])
+            v = int(V)
+            
+            #
+            # VolumeAverage3M  integer DEFAULT 0,
+            # VolumePerAverage real    DEFAULT 0.0,
+            #
+            avg_vol_3m = sum(list_vol[:-NUM_T_DAYS_ONE_QUARTER]) / \
+                NUM_T_DAYS_ONE_QUARTER
+            vol_per_avg = percentage(v, avg_vol_3m)
+
+            # 6 percentage
+            #
+            # Pert1Day         real    DEFAULT 0.0,
+            # Pert3Day         real    DEFAULT 0.0,
+            # Pert5Day         real    DEFAULT 0.0,
+            # Pert1Month       real    DEFAULT 0.0,
+            # Pert1Quater      real    DEFAULT 0.0,
+            # Pert1Year        real    DEFAULT 0.0,
+            #
+            pert_1d = percentage(ac, list_adj_close[-1])
+            pert_3d = percentage(ac, list_adj_close[-3])
+            pert_5d = percentage(ac, list_adj_close[-5])
+            pert_1m = percentage(ac, list_adj_close[-NUM_T_DAYS_ONE_MONTH])
+            pert_1q = percentage(ac, list_adj_close[-NUM_T_DAYS_ONE_QUARTER])
+            pert_1y = percentage(ac, list_adj_close[-NUM_T_DAYS_ONE_YEAR])
+            
+
+            #
+            # Need Y-M-D from date, for FY|CY_qtr_end
+            #
+            Y,M,D = map(int, d.split('-'))
+
+            #
+            # get CY qtr date
+            #
+            if M <=3:
+                date_cy_qtr = "%04d-12-31" % (Y-1)
+            elif M <=6:
+                date_cy_qtr = "%04d-03-31" % Y
+            elif M <=9:
+                date_cy_qtr = "%04d-06-30" % Y
+            else:
+                date_cy_qtr = "%04d-09-30" % Y
+
+            # bisect is to locate the pos of date_cy_qtr, no matter match or
+            # not, it is pointing to right, so need to -1
+            pos = bisect.bisect(list_date, date_cy_qtr) 
+            if pos > 0:
+                pos -= 1
+
+            #
+            # PertSinceFYQtr   real    DEFAULT 0.0,
+            #
+            pert_cy_qtr = percentage(ac, list_adj_close[pos])
+
+            #
+            # get FY qtr date
+            #
+            date_mmdd = '%02d-%02d' % (M,D)
+
+            FYQ_M, FYQ_D = map(int, fy_ends.split('-')) 
+            for i in range(4): 
+                # FY qtr range is FYQ_M-FYQ_D ~ FYQ_M+3-FYQ_D
+                FYQ_MM = FYQ_M + 3
+
+                FYQ_start = '%02d-%02d' % (FYQ_M, FYQ_D)
+                FYQ_end = '%02d-%02d' % (FYQ_MM, FYQ_D)
+
+                if date_mmdd >= FYQ_start and date_mmdd <= FYQ_end:
+                    break
+
+                if FYQ_MM > 12:
+                    FYQ_MM -= 12
+
+                    _start_ = '01-01'
+                    _end_ = '%02d-%02d' % (FYQ_MM, FYQ_D)
+
+                    if date_mmdd >= _start_ and date_mmdd <= _end_: 
+                        break
+                
+                FYQ_M = FYQ_MM
+          
+            # if fy_qtr_mmdd > date_mmdd, Y -= 1
+            fy_qtr_mmdd = '%02d-%02d' % (FYQ_M, FYQ_D)
+            if date_mmdd > fy_qtr_mmdd:
+                date_fy_qtr = "%04d-%s" % (Y, fy_qtr_mmdd)
+            else:
+                date_fy_qtr = "%04d-%s" % (Y-1, fy_qtr_mmdd)
+           
+            # bisect is to locate the pos of date_fy_qtr, no matter match or
+            # not, it is the right one, so need to -1
+            pos = bisect.bisect(list_date, date_fy_qtr) 
+            if pos > 0:
+                pos -= 1
+
+            #
+            # PertSinceCYQtr   real    DEFAULT 0.0,
+            #
+            pert_fy_qtr = percentage(ac , list_adj_close[pos])
+
+            # if doing ^GSPC, sp500_list_1day_pert = 0.0 * 63
+            if ticker == '^GSPC':
+                list_sp_date = list_date[-NUM_T_DAYS_ONE_QUARTER:]
+                list_sp_pert_1day_1q = list_pert_1day[-NUM_T_DAYS_ONE_QUARTER:]
+            # read SP500 1day pert
+            else:
+                cursor.execute(""" 
+                    SELECT Date, Pert1Day 
+                    FROM DailyQuota 
+                    WHERE Date<=? AND StockID=1
+                    ORDER BY Date DESC
+                    LIMIT ?
+                    """, (first_date, NUM_T_DAYS_ONE_QUARTER)
+                    )
+
+                rows_sp_1q = cursor.fetchall()
+                rows_sp_1q.reverse()
+                len_rows_sp_1q = len(rows_sp_1q)
+                
+                if len_rows_sp_1q == 0:
+                    list_sp_date = [''] * NUM_T_DAYS_ONE_QUARTER
+                    list_sp_pert_1day_1q = [0.0] * NUM_T_DAYS_ONE_QUARTER
+                elif len_rows_sp_1q < NUM_T_DAYS_ONE_QUARTER: 
+                    list_sp_date, list_sp_pert_1day_1q = zip(*rows_sp_1q)
+                    list_sp_date = list_sp_date[0] * (NUM_T_DAYS_ONE_QUARTER\
+                        - len_rows_sp_1q) + list_sp_date
+                    list_sp_pert_1day_1q = list_sp_pert_1day_1q[0] * \
+                        (NUM_T_DAYS_ONE_QUARTER - len_rows_sp_1q) + \
+                        list_sp_pert_1day_1q
+                else:
+                    list_sp_date, list_sp_pert_1day_1q = zip(*rows_sp_1q)
+            
+            #
+            # CorrelationSP1M  real    DEFAULT 1.0, 
+            # CorrelationSP3M  real    DEFAULT 1.0,
+            #
+            list_pert_1day = list_pert_1day[1:] + [pert_1d]
+            corr_sp_1m = correlation(\
+                list_sp_pert_1day_1q[-NUM_T_DAYS_ONE_MONTH:],\
+                list_pert_1day[-NUM_T_DAYS_ONE_MONTH:])
+            
+            corr_sp_3m = correlation(list_sp_pert_1day_1q, \
+                list_pert_1day[-NUM_T_DAYS_ONE_QUARTER:])
+            
+            #
+            # Beta3M           real    DEFAULT 1.0,
+            #
+            _covariance_ = np.cov(\
+                list_pert_1day[-NUM_T_DAYS_ONE_QUARTER:],\
+                list_sp_pert_1day_1q)[0,1]
+            _variance_ = np.var(list_sp_pert_1day_1q) 
+
+            if _variance_ == 0.0:
+                beta_3m = 1.0
+            else: 
+                beta_3m = np.around(_covariance_/_variance_, decimals = 2)
+
+            #print "!!! BETA !!!"
+            #print list_sp_pert_1day_1q[-10:]
+            #print list_pert_1day[-10:]
+            #print beta_3m
+
+            #
+            # print out debug info for each row
+            #
+            if debug_level > 5 or d > "2015-09-29":
+                counter += 1
+
+                print "!!!!!!!!!!! during process: #", counter, "!!!!!!!!!!!"
+                print row
+   
+                print "last 10 elments in list_date|vol|adj_close"
+                print list_date[-10:] 
+                print list_vol[-10:] 
+                print list_adj_close[-10:]
+                
+                print 'vol, avgvol_3m, vol_per_avg', v, avg_vol_3m, vol_per_avg
+                print "date_cy_qtr:", date_cy_qtr, d, pos, list_date[pos], list_adj_close[pos] 
+                print "date_fy_qtr:", date_fy_qtr, d, pos, list_date[pos], list_adj_close[pos] 
+                print "Pert 1D/Ticker", list_pert_1day[-10:] 
+                print "Pert 1D/SP500", list_sp_pert_1day_1q[-10:] 
+                print "Corr/Beta", corr_sp_1m, corr_sp_3m, beta_3m
+
+            # !!!!!!!!!!!! END of LOOP !!!! ADJUST list !!!!!!!
+            # adjust list_vol by pushing this vol
+            # update list_adj_close
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            list_adj_close = list_adj_close[1:] + [ac]
+            list_vol       = list_vol[1:]       + [v]
+            list_date      = list_date[1:]      + [d]
+
+            #d, O, H, L, C, V, AC = row.split(',')
+            #o, h, l, c, adj_close = map(float, [O, H, L, C, AC])
+            #vol = int(V)
+            #avg_vol_3m = sum(list_vol[:-NUM_T_DAYS_ONE_QUARTER])/NUM_T_DAYS_ONE_QUARTER
+            #vol_per_avg = percentage(vol, avg_vol_3m)
+            #pert_cy_qtr = percentage(adj_close, list_adj_close[pos])
+            rows_to_update.append((stock_id, d, o, h, l, c, ac, v,  \
+                avg_vol_3m, vol_per_avg, \
+                pert_1d, pert_3d, pert_5d, pert_1m, pert_1q, pert_1y,\
+                pert_cy_qtr, pert_fy_qtr,\
+                corr_sp_1m, corr_sp_3m, beta_3m))
+            #CREATE TABLE DailyQuota (
+            #StockID          integer NOT NULL,
+            #Date             char(10),
+            #Open             real    DEFAULT 0.0,
+            #High             real    DEFAULT 0.0,
+            #Low              real    DEFAULT 0.0,
+            #Close            real    DEFAULT 0.0,
+            #AdjClose         real    DEFAULT 0.0,
+            #Volume           integer DEFAULT 0,
+            #/* from yahoo finance website */
+            #VolumeAverage3M  integer DEFAULT 0,
+            #VolumePerAverage real    DEFAULT 0.0,
+            #Pert1Day         real    DEFAULT 0.0,
+            #Pert3Day         real    DEFAULT 0.0,
+            #Pert5Day         real    DEFAULT 0.0,
+            #Pert1Month       real    DEFAULT 0.0,
+            #Pert1Quater      real    DEFAULT 0.0,
+            #Pert1Year        real    DEFAULT 0.0,
+            #PertSinceCYQtr   real    DEFAULT 0.0,
+            #PertSinceFYQtr   real    DEFAULT 0.0,
+            #CorrelationSP1M  real    DEFAULT 1.0,
+            #CorrelationSP3M  real    DEFAULT 1.0,
+            #Beta3M           real    DEFAULT 1.0,
+            #PRIMARY KEY(StockID, Date),
+            #FOREIGN KEY(StockID)    REFERENCES Stock(StockID)
+
+        #
+        # End of for row in rows:
+        #
+
+        # ================================================================== # 
+        # Part 4: write to db and commit
+        # ================================================================== # 
+        if len(rows_to_update): 
+           
+            # first delete if this record exsists
+            for row in rows_to_update: 
+                cursor.execute("""
+                DELETE FROM DailyQuota
+                WHERE StockID=? and Date=?
+                """, (row[0], row[1],))
+
+                if debug_level > 2:
+                    print row
+               
+            if True: 
+                r = cursor.executemany("""
+                INSERT INTO DailyQuota 
+                VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?)
+                """, tuple(rows_to_update)
                 )
     
             conn.commit()
 
-        if self.debug:
-            print 'YFQuota._wget_daily: get %d records from %s' % (len(rows),
-                url)
+            if r.rowcount != len(rows_to_update):
+                print 'E.YFQuota._wget_daily: diff num commit, %d vs, %d'\
+                    % (len(rows), r.rowcount)
 
-        return len(rows)
+        if debug_level:
+            print 'YFQuota._wget_daily: get %d records from %s' % \
+                (len(rows), url)
 
+        return r.rowcount
+
+    # ----------------------------------------------------------------------- #
     def wget_daily_all(self):
         """
         get daily historic data from yahoo finance
@@ -2392,7 +2839,6 @@ class YFQuota(YFDB):
 
         all_stocks = YFSector().get_all_stock(source='YF', min_active=0)
 
-        #YG
         for stock in all_stocks:
             if self.debug: 
                 print "YFQuota.wget_daily_all(): wget daily quota -", stock
@@ -2433,22 +2879,27 @@ class YFQuota(YFDB):
     # ----------------------------------------------------------------------- #
     def do_calculation(self, ticker=''):
         '''
-        based on download daily quota, do a further calculation
+        based on download daily quota, do further calculations
         '''
-
-        row = self.fetch_one_row(
-            sql_code="""
+        #
+        # get stock's information: id, FYEnds, start, end
+        # ! we don't check if multiple records here, need to check in !
+        # ! class YFStock                                             !
+        #
+        self.cursor.execute(
+            """
             SELECT StockID, FYEnds, Start, End
             FROM Stock 
-            WHERE Ticker="%s" AND Active>0
-            """ % ticker, 
-            exit_if_none=False, 
-            error_msg='Invalid ticker - %s' % ticker)
-        
-        if row: 
-            (stock_id, fy_ends, start, end) = row
-        else:
-            return
+            WHERE Ticker=? AND Active>0
+            """, (ticker,))
+
+        row = self.cursor.fetchone()
+
+        if row == None or len(row) == 0:
+            print 'E.do_calculation: incorrect ticker -', ticker
+            return -1
+
+        stock_id, fy_ends, start, end = row
 
         data_rows = self.get_daily(ticker=ticker, 
             end_ymd=YFDate().sp_days[-1], start_ymd=end)
@@ -2662,6 +3113,7 @@ class YFDate:
 
         # load all sp500 trading days
         self.load_sp_days()
+        #self.sp_days=['0000-00-00']
 
         # get all oe days
         self.get_oe_days()
@@ -2682,6 +3134,10 @@ class YFDate:
             spday_of           <date> 
             spday_diff         <date1> <date2>
             spday_offset       <date1> <offset>
+            FY_quarter_ends    MM-DD
+            date_to_FY_quarter date<YYYY-MM-DD> FYends<MM-DD>
+            get_FYCY_quarters  date<YYYY-MM-DD> FYends<MM-DD> ticker
+            FY_to_CY_quarter   date<YYYY-MM-DD> FY-Qtr FYends<MM-DD>
             """
         else:
             try: 
@@ -2700,7 +3156,6 @@ class YFDate:
 
                     list_title.append('========>')
                     list_value.append('date_to_nthweekday()')
-                    #for d in ['2014-10-01', '2011-01-02', '2011-01-05', '2015-05-21', '2015-05-01', '2015-05-08']: 
                     for d in ['2015-05-01', '2015-05-02', '2015-05-06', '2015-05-07', '2015-05-14', '2015-05-21']: 
                         list_title.append('txt,%s' % d)
                         list_value.append(self.date_to_nthweekday(d))
@@ -2809,6 +3264,20 @@ class YFDate:
                 elif args[0] == 'spday_offset':
                     print self.spday_offset(*args[1:])
 
+                elif args[0] == 'FY_quarter_ends':
+                    print self.FY_quarter_ends(FY_ends=args[1])
+
+                elif args[0] == 'date_to_FY_quarter':
+                    print self.date_to_FY_quarter(date_ymd=args[1], 
+                        FY_ends=args[2])
+
+                elif args[0] == 'FY_to_CY_quarter':
+                    print self.FY_to_CY_quarter(FY_quarter=args[1],
+                        FY_ends=args[2])
+                
+                elif args[0] == 'get_FYCY_quarters':
+                    print self.get_FYCY_quarters(date_ymd=args[1],
+                        FY_ends=args[2], ticker=args[3])
                 else: 
                     self.test('help')
             except: 
@@ -2886,9 +3355,9 @@ class YFDate:
         # YFQuota(1) = load_sp_only
         rows = YFQuota.static_get_daily('^GSPC', wget_if_none=1)
 
-        if not rows or not len(rows):
-           YFQuota()._wget_daily('^GSPC') 
-           rows = YFQuota.get_daily('^GSPC')
+        #if not rows or not len(rows):
+        #  YFQuota()._wget_daily('^GSPC') 
+        # rows = YFQuota.get_daily('^GSPC')
 
         if len(rows):
             for line in rows:
@@ -3117,26 +3586,191 @@ class YFDate:
 
         return ret_list
 
-    # ------------------------------------------------------------------------ #
-    # get_FY_quarter_ends: get the fiscal-year quarter-ends
-    # Input: FY_endsdate_, like 12/31
-    # Oput: list of FQ/FY ends [03-31, 05-15, 08-15, 11-15]
-    # FY+90day, Q+45days
-    # ------------------------------------------------------------------------ #
-    def get_FY_quarter_ends(self, FY_end):
-        list_fquarter_ends = []
+    # ----------------------------------------------------------------------- #
+    def get_FYCY_quarters(self, date_ymd='', FY_ends='12-31', ticker=''):
+        """
+        """
+        fy_qtr = self.date_to_FY_quarter(date_ymd=date_ymd, 
+            FY_ends=FY_ends)
 
-        end_mmdd = FY_end
+        cy_qtr = self.FY_to_CY_quarter(FY_quarter=fy_qtr, FY_ends=FY_ends, 
+            ticker=ticker)
 
-        for offset in [90, 45, 45, 45]:
-            list_fquarter_ends.append(
-                self.day_offset(end_mmdd, offset)
-                )
+        return (fy_qtr, cy_qtr)
 
-            end_mmdd = self.day_offset(end_mmdd, 90)
+    # ----------------------------------------------------------------------- #
+    def date_to_FY_quarter(self, date_ymd='', FY_ends='12-31'):
+        """
+        Covert date to FY quarter to CY, depends on FY ends
+        """
+        
+        y, m, d = map(int, date_ymd.split('-'))
+        mmdd = '%02d-%02d' % (m,d)
 
-        return list_fquarter_ends
+        er_within_days = [90, 90, 90, 90]
+        quarter = 9
+        MMDD_start = FY_ends
+        for qtr in range(4):
+            M, D = map(int, MMDD_start.split('-'))
 
+            M += er_within_days[qtr] / 30
+            D += er_within_days[qtr] % 30
+
+            if D > 30:
+                M += D/30
+                D = D % 30
+
+            MMDD_end = '%02d-%02d' % (M, D)
+
+            #print qtr, MMDD_start, MMDD_end 
+            if mmdd >= MMDD_start and mmdd <= MMDD_end:
+                quarter = qtr
+                break
+
+            # if month > 12, the range is over year!!!!
+            if M > 12:
+                MMDD_start_over_year = '01-01'
+                MY = ((M-1) % 12) + 1
+                MMDD_end_over_year = '%02d-%02d' % (MY, D)
+
+                #print qtr, MMDD_start_over_year, MMDD_end_over_year
+                if mmdd >= MMDD_start_over_year and \
+                    mmdd <= MMDD_end_over_year: 
+
+                    quarter = qtr
+                    break
+      
+            # now get the start of next quarter
+            M, D = map(int, MMDD_start.split('-'))
+            M += 3
+            if M > 12:
+                M = 1 + ((M - 1) % 12)
+            MMDD_start = '%02d-%02d' % (M, D)
+
+        if quarter > 3:
+            print 'E.date_to_FY_quarter: cannot get FY Qtr for %s, FYE: %s' %\
+                (date_ymd, FY_ends)
+
+        # if MM-DD > FYEnds, the FY += 1
+        if mmdd > FY_ends:
+            y += 1
+
+        if quarter == 0:
+            quarter = 4
+            y -= 1
+
+        return '%dQ%d' % (y, quarter)
+
+    # ----------------------------------------------------------------------- #
+    def FY_to_CY_quarter(self, FY_quarter='', FY_ends='12-31', ticker=''):
+        """
+        Based the FY ends of stock, covert FY quarter to CY quarter. 
+        """
+        m, d = map(int, FY_ends.split('-'))
+
+        days_diff = 30 * (m - 1) + d + 45
+
+        a = re.search('(\d{4})Q(\d)', FY_quarter)
+
+        if not a:
+            return 'NA'
+        
+        y, q = map(int, a.groups())
+
+        if ticker == 'FNSR':
+            q -= 2
+        else: 
+            q -= days_diff / 90
+
+        if q <= 0:
+            q += 4
+            y -= 1
+
+        return '%dQ%d' % (y, q)
+
+    # ----------------------------------------------------------------------- #
+    def FY_to_CY_quarter_old(self, date_ymd='', FY_quarter='', FY_ends='12-31', 
+        ticker=''):
+        """
+        Cover FY quarter to CY, depends on FY ends
+        """
+        a = re.search('(\d{4})Q(\d)', FY_quarter)
+
+        if not a:
+            return 'NA'
+
+        yy,mm,dd= map(int, date_ymd.split('-'))
+
+        mmdd = '%02d-%02d' % (mm, dd)
+
+        y, q = map(int, a.groups())
+
+        if mmdd > FY_ends:
+            y -= 1
+
+        if ticker=='FNSR':
+            Q = q + 2
+        elif FY_ends >= '11-15' or FY_ends <='02-15':
+            Q = q
+        elif FY_ends > '02-15' and FY_ends <='05-15':
+            Q = q + 1
+        elif FY_ends > '05-15' and FY_ends <='08-15':
+            Q = q + 2
+        elif FY_ends > '08-15' and FY_ends <='11-15':
+            Q = q + 3
+
+        if Q > 4:
+            Q -= 4
+        
+        return '%dQ%d' % (y, Q)
+
+    def FY_quarter_ends(self, FY_ends='12-31'):
+        """
+        FY_quarter_ends: get the fiscal-quarter-ends
+        Per SEC, public companies must annouce ER within 90 days after FY end,
+        and 45 days after FQ end.
+        """
+        m, d = map(int, FY_ends.split('-'))
+        if m > 12 or d > 31:
+            print 'E.FY_quarter_ends: incorrect MM-DD:', FY_ends
+            FY_ends = '12-31'
+
+        mmdd = FY_ends
+        within_days = [90, 45, 45, 45]
+        quarters = ['Q4', 'Q1', 'Q2', 'Q3']
+
+        ret_str = ''
+
+        for q, days in zip(quarters, within_days):
+            m, d = map(int, mmdd.split('-'))
+
+            ret_str += '%s:' % q
+
+            M = m + days / 30
+            D = d + days % 30
+          
+            if M > 12:
+                M = M % 12
+                ret_str += '%s,12-31;' % mmdd
+                mmdd = '01-01'
+
+            if D > self.days_in_month[M-1]:
+                D -= self.days_in_month[M-1]
+                M += 1
+                    
+            if M > 12:
+                M = M % 12
+                ret_str += '%s,12-31;' % mmdd
+                mmdd = '01-01'
+
+            ret_str += '%s,%02d-%02d|' % (mmdd, M, D)
+      
+            # now get the start of next quarter
+            m += 3
+            if m > 12:
+                m = m % 12
+            mmdd = '%02d-%02d' % (m,d)
+        return ret_str
 
 # --------------------------------------------------------------------------- #
 def usage():
@@ -3147,7 +3781,7 @@ The most commonly used yahoofinance commands are:
 shared       Test shared functions 
 yfdate       Test class YFDate 
 yfstock      Test class YFStock
-yfquota      Test class YFQuota
+YFQuota      Run/Test functions in class YFQuota
 yfsector     Test class YFSector 
 sector       Test class Sector
 stocker      Test class StockER
@@ -3179,7 +3813,7 @@ if __name__ == "__main__":
         s = YFStock()
         s.test(*sys.argv[2:])
 
-    elif sys.argv[1] == 'yfquota': 
+    elif sys.argv[1].lower() == 'yfquota': 
         hd = YFQuota()
         hd.run(*sys.argv[2:])
 
@@ -3233,6 +3867,3 @@ if __name__ == "__main__":
                 ):
                 print mmdd, '+', offset, o.day_offset(mmdd, offset)
     
-            #get_FY_quarter_ends(self, FY_end):
-            for fy_end in ['12-31', '01-15', '04-15', '08-01']:
-                print fy_end, ' ==> ', o.get_FY_quarter_ends(fy_end)
