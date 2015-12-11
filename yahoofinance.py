@@ -15,6 +15,7 @@ import re
 import sys
 import math
 import time
+import pprint
 import numpy as np
 import bisect
 import datetime
@@ -32,7 +33,7 @@ TODAY_YMD, TODAY_YM, LAST_TRADE_DAY = '', '', ''
 # LOCAL | yahoofinance
 DATA_SOURCE = 'yahoofinance'
 
-BASE_DIR_PATH = './'
+BASE_DIR_PATH = '/home1/uptrendc/git/yahoofinance/'
 
 SQL_DIR_PATH = '%s/SQL' % BASE_DIR_PATH
 YF_DB_FILE = '%s/yahoofinance.db' % SQL_DIR_PATH
@@ -138,18 +139,18 @@ def test_shared_func(*args):
                 list_value.append(range_quarter("2015Q4", 4, 1))
 
                 list_title.append('=================>')
-                list_value.append('YFQuota.static_get_daily()')
-#                list_title.append('YFQuota.static_get_daily()')
+                list_value.append('YFQuota.static_get()')
+#                list_title.append('YFQuota.static_get()')
 #                list_value.append('%d:%s-%s' % (
-#                    len(YFQuota.static_get_daily()),
-#                    YFQuota.static_get_daily()[0][1],  
-#                    YFQuota.static_get_daily()[-1][1]))
+#                    len(YFQuota.static_get()),
+#                    YFQuota.static_get()[0][1],  
+#                    YFQuota.static_get()[-1][1]))
                 
                 pprint_name_value(list_title, list_value)
             elif args[0] == 'correlation': 
                 #def correltion(list1, list2):
                 list1=[[1,2,3,4],[1.1,2.5,3.9,4.0],[1.8,-2.6,-8.1,4.5],[1.1,2.5,3.9,4.0,0,0],[1.1,2.5,3.9,4.0,0,0,0],[4.64,-6.45,1.80,23.52,13.49,9.26,-3.03,5.31,12.23,3.10,-6.09,-3.14,4.07,6.35,0.61,5.45,-2.01,0.80,-2.03,5.99,-3.01,4.51,2.39,1.74,9.84,4.04,4.31,2.60,-0.07,-0.24,-3.61,-4.82,2.70,0.09,8.46,-0.28,-1.13,5.57,0.96,4.58,-2.33,-1.10,1.87,0.32,-0.56]]
-                list2=[[10,20,30,40],[1.8,-2.6,-8.1,4.5],[1.1,2.5,3.9,4.0],[1.8,-2.6,-8.1,4.5,0,0],[1.8,-2.6,-8.1,4.5,0,0,0],[0.78,-8.57,-10.99,8.54,9.39,5.31,0.02,7.41,3.36,3.57,-1.98,5.74,1.78,-3.70,2.85,5.88,1.48,-8.20,-5.39,6.88,-4.74,8.76,3.69,-0.23,6.53,2.26,3.20,-0.10,2.85,-1.35,-1.83,-2.15,-5.68,-7.18,10.77,-0.51,0.85,4.36,4.06,3.13,-0.75,-6.27,3.96,1.26,1.98]]
+                list2=[[10,20,30,4],[1.8,-2.6,-8.1,4.5],[1.1,2.5,3.9,4.0],[1.8,-2.6,-8.1,4.5,0,0],[1.8,-2.6,-8.1,4.5,0,0,0],[0.78,-8.57,-10.99,8.54,9.39,5.31,0.02,7.41,3.36,3.57,-1.98,5.74,1.78,-3.70,2.85,5.88,1.48,-8.20,-5.39,6.88,-4.74,8.76,3.69,-0.23,6.53,2.26,3.20,-0.10,2.85,-1.35,-1.83,-2.15,-5.68,-7.18,10.77,-0.51,0.85,4.36,4.06,3.13,-0.75,-6.27,3.96,1.26,1.98]]
 
                 for x,y in zip(list1,list2):
                     print ["%2.2f" % f for f in x]
@@ -180,6 +181,11 @@ def test_shared_func(*args):
         except:
             raise
             test_shared_func('usage')
+
+# pretty float .2f
+# --------------------------------------------------------------------------- #
+def float_2f(f):
+    return '%.2f' % f
 
 #
 # unit to number, k/b/m
@@ -275,7 +281,7 @@ def month_atoi(month_str):
     return 0
     
 # --------------------------------------------------------------------------- #
-def date_atoymd(date_, default_value='0000-00-00'):
+def date_atoymd(date_, default_value='0000-00-01'):
     """
     convert date string to YYYY-MM-DD or MM-DD formate, like
     Feb 2, 2012 -> '2012-02-02'
@@ -446,12 +452,18 @@ def average(list_float):
 
 def correlation(list1, list2):
     if len(list1) != len(list2):
-        print 'Error: correlation(), 2 different length list'
-        return 0.0
-            
+        print 'E.correlation: different length list'
+
     len_ = len(list1)
+    if len(list1) < len(list2):
+        len_ = len(list1)
+        list2 = list2[:len_]
+    elif len(list2) < len(list1):
+        len_ = len(list2)
+        list1 = list1[:len_]
+
     if len_ == 0:
-        print 'Error: correlation(), zero length list'
+        print 'E.correlation: zero lenghth list'
         return 0.0
 
     avg_list1 = average(list1)
@@ -581,7 +593,7 @@ class YFDB(object):
         self.conn = sql.connect(YF_DB_FILE)
         self.cursor = self.conn.cursor()
         self.table = table
-        self.debug = 1
+        self.debug = 0
 
     # ----------------------------------------------------------------------- #
     def pprint(self):
@@ -682,9 +694,9 @@ class YFStock(YFDB):
             'MarketCap', 'Start', 'End']
 
     # ----------------------------------------------------------------------- #
-    def test(self, *args):
+    def run(self, *args):
         if len(args) < 1 or re.search('usage|help', args[0]):
-            print """yahoofinance.py test_yfstock <method> <args>
+            print """yahoofinance.py YFStock <method> <args>
             
             get_stock_id      <ticker> e.g. get_stock_id YHOO
             get_stock_info    <ticker> e.g. get_stock_info TSLA
@@ -701,7 +713,7 @@ class YFStock(YFDB):
                 elif args[0] == 'get_stock_info_dict': 
                     print self.get_stock_info_dict(*args[1:])
                 elif args[0] == 'get_stock_info': 
-                    stock_info = self.get_stock_info(*args[1:])
+                    stock_info = self.get_stock_info(ticker=args[1])
                     if stock_info: 
                         pprint_name_value(self.list_field_all, stock_info)
                     else:
@@ -716,10 +728,10 @@ class YFStock(YFDB):
                     print 'here'
                     self.adjust_active()
                 else:
-                    self.test('usage')
+                    self.run('usage')
             except:
                 raise
-                self.test('usage')
+                self.run('usage')
 
     # ----------------------------------------------------------------------- #
     def get_stock_id(self, ticker, active=0):
@@ -793,11 +805,12 @@ class YFStock(YFDB):
             return {}
 
     # ----------------------------------------------------------------------- #
-    def get_stock_info(self, ticker, active=1):
+    def get_stock_info(self, ticker, active=0):
         #SELECT StockID, Ticker, Name, FYEnds, Beta, 
         #HasOption, AvgVol, MarketCap, Start, End 
         self.cursor.execute("""
-        SELECT * FROM Stock WHERE Ticker=? AND Active>?
+        SELECT * FROM Stock 
+        WHERE Ticker=? AND Active>=?
         """, (ticker, active,))
 
         return self.cursor.fetchone() 
@@ -841,8 +854,7 @@ class YFStock(YFDB):
             UPDATE Stock SET
             Name=?, FYEnds=?, Beta=?, AvgVol=?, Shares=?, Floating=?, 
             MarketCap=?, Active=?
-            WHERE StockID=?""", 
-            (tuple(list_value[1:]) + tuple([stock_id]))
+            WHERE StockID=?""", (tuple(list_value[1:]) + tuple([stock_id]))
             )
 
         self.conn.commit()
@@ -979,6 +991,409 @@ class YFStock(YFDB):
         for row in self.cursor.fetchall():
             print row[1]
 
+class ERCorrelation(YFDB):
+    """
+    Class: Stock ER Correlation
+    """
+    # ----------------------------------------------------------------------- #
+    def __init__(self):
+        YFDB.__init__(self, "ERCorrelation")
+        self.debug = 0
+
+    # ----------------------------------------------------------------------- #
+    def run(self, *args):
+        if len(args) < 1 or re.search('usage|help', args[0]):
+            print """yahoofinance.py ERCorr <method> <args>
+            do_pair_corr     <ticker1> <ticker2>
+            get_pair_corr    <ticker1> <ticker2>
+            do_corr_industry <src> <sector> <industry>
+            """
+        else: 
+            try: 
+                if args[0] == 'do_pair_corr': 
+                    n = self.do_pair_corr(ticker1=args[1], ticker2=args[2])
+                    print 'update %d record' % n
+                elif args[0] == 'get_pair_corr': 
+                    print self.get_pair_corr(ticker1=args[1], ticker2=args[2])
+                elif args[0] == 'do_corr_industry': 
+                    self.do_corr_industry(source=args[1], sector=args[2],
+                        industry=args[3])
+            except:
+                raise
+                self.run('usage')
+
+    # ----------------------------------------------------------------------- #
+    def get_stock_er_history1(self, ticker='', stock_id=-1):
+        """
+        1) get er dates from StockER table
+        2) get er performance data from DailyQuota table
+        """
+        if stock_id == -1:
+            stock_id = YFStock().get_stock_id(ticker)
+
+        if stock_id == None:
+            print 'E.ERCorr.get_stock_er_history1: invalid stock id, ticker:%s, stockid:%d' % (ticker, stock_id)
+            return {}
+        
+        self.cursor.execute(""" 
+            SELECT x.ERDate, x.CYQuarter 
+            FROM StockER x
+            JOIN(SELECT y.StockID, y.CYQuarter, MIN(SourceID) AS min_src 
+                 FROM StockER y 
+                 WHERE StockID=? AND ERDate IS NOT NULL
+                 group BY y.StockID, y.CYQuarter) 
+            y  ON x.StockID=y.StockID 
+              AND x.CYQuarter=y.CYQuarter 
+              AND x.SourceID =y.min_src 
+            GROUP BY x.StockID, x.CYQuarter 
+            ORDER BY x.CYQuarter DESC 
+            """, (stock_id, )
+            )
+        er_rows = self.cursor.fetchall()
+
+        list_erdate, list_cyq, = zip(*er_rows) 
+
+        self.cursor.execute(""" 
+            SELECT Date, Pert1Day, PertSinceCYQtr, PertSinceFYQtr
+            FROM DailyQuota 
+            WHERE StockID=? and Date IN (%s)
+            """ % ','.join('?'*len(list_erdate)), [stock_id] + list(list_erdate))
+
+        er_perf_rows = self.cursor.fetchall()
+
+        list_date, list_pert1d, list_pertcyq, list_pertfyq = zip(*er_perf_rows) 
+
+        dict_er_history = {}
+
+        for i in range(len(list_date)):
+            d = list_date[i]
+            if d not in list_erdate:
+                print '%s not in list_erdate' % d
+                continue
+
+            cyq = list_cyq[list_erdate.index(d)]
+
+            dict_er_history[cyq] = (d, float_2f(list_pert1d[i]), \
+                float_2f(list_pertcyq[i]),
+                float_2f(list_pertfyq[i]))
+        return dict_er_history
+
+    # ----------------------------------------------------------------------- #
+    def get_stock_er_history2(self, ticker='', stock_id=-1):
+        """
+        1) get er performance data from ERView 
+        """
+        if stock_id == -1:
+            stock_id = YFStock().get_stock_id(ticker)
+
+        if stock_id == None:
+            print 'E.ERCorr.get_stock_er_history1: invalid stock id, ticker:%s, stockid:%d' % (ticker, stock_id)
+            return {}
+       
+        self.cursor.execute(""" 
+            SELECT CYQuarter, ERDate, Pert1Day, PertSinceCYQtr, PertSinceFYQtr
+            FROM ERView
+            WHERE StockID=? and ERDate IS NOT NULL
+            ORDER BY CYQuarter DESC, SourceID DESC;
+            """, (stock_id,)
+            )
+
+        dict_er_history = {}
+        for row in self.cursor.fetchall():
+            dict_er_history[row[0]] = row[1:]
+
+        return dict_er_history
+
+    # ----------------------------------------------------------------------- #
+    def get_stock_data_by_days(self, ticker='', stock_id=-1, list_date=[]):
+        """
+        Get stock historic data - PertSinceCYQtr|PertSinceFYQtr from table
+        DailyQuota by list of dates
+        """
+        if stock_id == -1:
+            stock_id = YFStock().get_stock_id(ticker)
+
+        if stock_id == None:
+            print 'E.ERCorr.get_stock_data_by_days: invalid stock id, ticker:%s, stockid:%d' % (ticker, stock_id)
+            return {}
+       
+        self.cursor.execute(""" 
+            SELECT Date, PertSinceCYQtr, PertSinceFYQtr
+            FROM DailyQuota
+            WHERE StockID=? AND Date IN (%s) 
+            """ % ','.join('?'*len(list_date)), ([stock_id] + list_date)
+            )
+
+        dict_stock_per_date = {}
+        for row in self.cursor.fetchall():
+            if None in row: 
+                continue
+            dict_stock_per_date[row[0]] = row[1:]
+
+        #print '*' * 30, ticker, '*' * 30
+        #print dict_stock_per_date
+
+        return dict_stock_per_date 
+
+    # ----------------------------------------------------------------------- #
+    # YG
+    def get_pair_corr(self, ticker1='', ticker2=''):
+        """
+        get correlation of ticker1/2 ER percentage
+        """
+        yfd = YFDate()
+
+        total_record_num = 0
+
+        #
+        # stock_id1 < stockd_i2, if not swap it. 
+        #
+        stockid1 = YFStock().get_stock_id(ticker=ticker1)
+        stockid2 = YFStock().get_stock_id(ticker=ticker2)
+
+        if stockid1 > stockid2:
+            stockid1, stockid2 = stockid2, stockid1
+            ticker1, ticker2 = ticker2, ticker1
+
+        self.cursor.execute(""" 
+            SELECT * 
+            FROM ERCorrelation
+            WHERE StockID1=? and StockID2=?
+            ORDER BY CorrQuarter DESC 
+            """, (stockid1, stockid2)
+            )
+        
+        rows = self.cursor.fetchall()
+
+        return rows
+    # ----------------------------------------------------------------------- #
+    # YG
+    def do_pair_corr(self, ticker1='', ticker2='', force_redo=0):
+        """
+        calcualte correlation of ticker1/2 ER percentage
+        """
+        yfd = YFDate()
+
+        total_record_num = 0
+
+        #
+        # stock_id1 < stockd_i2, if not swap it. 
+        #
+        stockid1 = YFStock().get_stock_id(ticker=ticker1)
+        stockid2 = YFStock().get_stock_id(ticker=ticker2)
+
+        if stockid1 > stockid2:
+            stockid1, stockid2 = stockid2, stockid1
+            ticker1, ticker2 = ticker2, ticker1
+
+        # get stock er history dict 
+        # SELECT CYQuarter, ERDate, Pert1Day, PertSinceCYQtr, PertSinceFYQtr 
+        # FROM ERView
+        #
+        dict_er_data_stock1 = self.get_stock_er_history2(ticker=ticker1)
+
+        last_qtr = sorted(dict_er_data_stock1.keys())[-1]
+
+        if not force_redo:
+            rows = self.get_pair_corr(ticker1=ticker1, ticker2=ticker2)
+
+            last_corr_qtr = ''
+            if len(rows): 
+                last_corr_qtr = rows[0][4]
+
+            if last_corr_qtr == last_qtr:
+                print 'L.ERCorrelation.do_pair_corr: last corr qtr is same', \
+                    last_corr_qtr, 'vs', last_qtr
+                return 0
+
+        
+        dict_er_data_stock2 = self.get_stock_er_history2(ticker=ticker2)
+        #
+        #
+        # 1) get common quarter between 2 tickers
+        # 2) get late erdates
+        #
+        list_common_qtr = []
+        list_late_er_dates = []
+
+        # for each q of stock1, if in stock2, append it
+        for q in dict_er_data_stock1.keys():
+            if q in dict_er_data_stock2:
+                list_common_qtr.append(q)
+
+                # compare er dates, append the late ones
+                if dict_er_data_stock1[q][0] < dict_er_data_stock2[q][0]: 
+                    list_late_er_dates.append(dict_er_data_stock2[q][0])
+                else:
+                    list_late_er_dates.append(dict_er_data_stock1[q][0])
+        
+        # this list is now to history
+        list_common_qtr.sort()
+        list_common_qtr.reverse()
+        list_late_er_dates.sort()
+        list_late_er_dates.reverse()
+
+        dict_stock_per_late_er_date1 = self.get_stock_data_by_days(\
+            ticker=ticker1, list_date=list_late_er_dates)
+        dict_stock_per_late_er_date2 = self.get_stock_data_by_days(\
+            ticker=ticker2, list_date=list_late_er_dates)
+
+        if self.debug :
+            print '!!!!!! er history for %s !!!!!!' % ticker1
+            pp = pprint.PrettyPrinter(indent=4)
+            print pp.pprint(dict_er_data_stock1)
+            print '!!!!!! er history for %s !!!!!!' % ticker2
+            print pp.pprint(dict_er_data_stock2)
+            print '!!!!!! late er dates !!!!'
+            print list_late_er_dates
+            print '!!!!!! late er history for %s !!!!!!' % ticker1
+            print pp.pprint(dict_stock_per_late_er_date1)
+            print '!!!!!! late er history for %s !!!!!!' % ticker2
+            print pp.pprint(dict_stock_per_late_er_date2)
+
+        #
+        # ER correlation is based on last 2Y, 9/11Q, 3Y, 9Y
+        #
+        #for len_qtr in [8, 9, 11, 12, 36]:
+        for len_qtr in [9, 11, 36]:
+            for i in range(len(list_common_qtr) - len_qtr + 1):
+                this_qtr = list_common_qtr[i]
+
+                last_n_qtr = yfd.last_N_quarter_by_quarter(
+                    this_quarter=this_qtr,
+                    num_quarter=len_qtr)
+
+                #
+                # init the lists of datas
+                #
+                list1_date, list2_date = [], []
+                list1_p1d, list2_p1d = [], []
+                list1_pcq, list2_pcq = [], []
+                list1_pfq, list2_pfq = [], []
+                list1_pcqL, list2_pcqL= [], []
+                list1_pfqL, list2_pfqL= [], []
+                list_day_diff = []
+
+                # num of common qtr
+                num_common_qtr = 0
+                for q in last_n_qtr:
+                    # construct list of pert one qtr by one
+                    if q in dict_er_data_stock1 and q in dict_er_data_stock2:
+                        num_common_qtr += 1
+                        
+                        ed1, p1d1, pcq1, pfq1 = dict_er_data_stock1[q]
+                        list1_date.append(ed1)
+                        list1_p1d.append(p1d1)
+                        list1_pcq.append(pcq1)
+                        list1_pfq.append(pfq1)
+
+                        ed2, p1d2, pcq2, pfq2 = dict_er_data_stock2[q]
+                        list2_date.append(ed2) 
+                        list2_p1d.append(p1d2)
+                        list2_pcq.append(pcq2) 
+                        list2_pfq.append(pfq2)
+
+                        list_day_diff.append(yfd.spday_diff(ed1, ed2))
+
+                        last_ed = ed1
+                        if ed1 < ed2:
+                            last_ed = ed2
+                        if last_ed in dict_stock_per_late_er_date1 and\
+                            last_ed in dict_stock_per_late_er_date2: 
+                            pcqL1, pfqL1 = dict_stock_per_late_er_date1[last_ed] 
+                            list1_pcqL.append(pcqL1) 
+                            list1_pfqL.append(pfqL1)
+
+                            pcqL2, pfqL2 = dict_stock_per_late_er_date2[last_ed] 
+                            list2_pcqL.append(pcqL2) 
+                            list2_pfqL.append(pfqL2)
+               
+                    
+                diff_day = list_day_diff[0]
+                corr_date = dict_er_data_stock1[this_qtr][0]
+
+                corr_p1d = correlation(list1_p1d, list2_p1d)
+                corr_pcq = correlation(list1_pcq, list2_pcq)
+                corr_pfq = correlation(list1_pfq, list2_pfq)
+                corr_pcqL = correlation(list1_pcqL, list2_pcqL)
+                corr_pfqL = correlation(list1_pfqL, list2_pfqL)
+
+                
+                if self.debug and '2015' in this_qtr:
+
+                    print '!'*30, this_qtr, len_qtr, num_common_qtr, \
+                        '!'*30
+                    print ticker1, ["%6.2f" % f for f in list1_p1d]
+                    print ticker2, ["%6.2f" % f for f in list2_p1d]
+                    print list_day_diff
+                    print corr_p1d
+    
+                    print ["%6.2f" % f for f in list1_pcq]
+                    print ["%6.2f" % f for f in list2_pcq]
+                    print corr_pcq
+    
+                    print ["%6.2f" % f for f in list1_pfq]
+                    print ["%6.2f" % f for f in list2_pfq]
+                    print corr_pfq
+                
+                    print ["%6.2f" % f for f in list1_pcqL]
+                    print ["%6.2f" % f for f in list2_pcqL]
+                    print corr_pcqL
+
+                    print ["%6.2f" % f for f in list1_pfqL]
+                    print ["%6.2f" % f for f in list2_pfqL]
+                    print corr_pfqL
+
+                #if True: continue
+
+                r = self.cursor.execute("""
+                    INSERT OR REPLACE INTO ERCorrelation
+                    (StockID1, StockID2, SourceID, DaysDiff, CorrQuarter, 
+                     CorrDate, CorrNumber, CorrRealNum, Correlation)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, \
+                    (stockid1, stockid2, 101, diff_day, this_qtr,\
+                    corr_date, len_qtr, num_common_qtr, corr_p1d,\
+                    ))
+
+                r = self.cursor.execute("""
+                    INSERT OR REPLACE INTO ERCorrelation
+                    (StockID1, StockID2, SourceID, DaysDiff, CorrQuarter, 
+                     CorrDate, CorrNumber, CorrRealNum, Correlation)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, \
+                    (stockid1, stockid2, 102, diff_day, this_qtr,\
+                    corr_date, len_qtr, num_common_qtr, corr_pcq,\
+                    ))
+
+                r = self.cursor.execute("""
+                    INSERT OR REPLACE INTO ERCorrelation
+                    (StockID1, StockID2, SourceID, DaysDiff, CorrQuarter, 
+                     CorrDate, CorrNumber, CorrRealNum, Correlation)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, \
+                    (stockid1, stockid2, 103, diff_day, this_qtr,\
+                    corr_date, len_qtr, num_common_qtr, corr_pfq,\
+                    ))
+
+                self.conn.commit()
+                total_record_num += self.cursor.rowcount 
+
+        return total_record_num
+
+    # ----------------------------------------------------------------------- #
+    def do_corr_industry(self, source='good', sector='', industry=''):
+        s = Sector()
+
+        rows = s.stocks_in(source=source, sector=sector, industry=industry)
+        stocks = zip(*rows)[0]
+
+        for i in range(len(stocks)):
+            for j in range(i+1, len(stocks)):
+                print 'L.ERCorrelation.do_corr_industry: do corr of %s vs %s'\
+                    % (stocks[i], stocks[j])
+                self.do_pair_corr(ticker1=stocks[i], ticker2=stocks[j])
+
 class StockER(YFDB):
     """
     Class: Stock ER info
@@ -991,53 +1406,172 @@ class StockER(YFDB):
         self.sector_obj = YFSector()
 
     # ----------------------------------------------------------------------- #
-    def test(self, *args):
+    def run(self, *args):
         if len(args) < 1 or re.search('usage|help', args[0]):
-            print """yahoofinance.py test_yfstocker <method> <args>
+            print """yahoofinance.py StockER <method> <args>
             
-            wget_yfer_day         day (ike '2015-10-27' or '20151027')
-            wget_yfer_range       start_day end_day
-            wget_yfer_next_months start_day end_day
-            insert_raw_er_record  ticker, source, day, time
-            get_er_record         ticker, source, day
-            do_cyfy_quarter       
+            wget_by_day day<'2015-10-27'>
+            wget_range   start_day end_day
+            wget_mths    <num_mths>
+            upsert_er    tick source day time
+            delete_er    tick source day time  - delete er record
+            get_er       tick source, day
+            get_er_dates tick stockid <list_qtrs>
+            process      redo_CYFY(0|1)        - do all ER's CY/FY qtr and date
+            convert      ....                  - convert old er data
             """
         else: 
             if args[0] == 'all': 
-                self.debug = 1
-                print '!!!!!! wget_yfer_day("2016-04-26") !!!!'
-                self.wget_yfer_day("2016-04-26")
-                print '!!!!!! get_er_record("BRX", "YF", "2016-04-26") !!!!'
-                print self.get_er_record(ticker="BRX", source="YF", rawdate="2016-04-26")
-            elif args[0] == 'wget_yfer_day': 
-                n = self.wget_yfer_day(*args[1:])
+                self.debug = 0
+                print '!!!!!! wget_by_day("2016-04-26") !!!!'
+                self.wget_by_day("2016-04-26")
+                print '!!!!!! get_er("BRX", "YF", "2016-04-26") !!!!'
+                print self.get_er(ticker="BRX", source="YF", \
+                    rawdate="2016-04-26")
+            elif args[0] == 'wget_by_day': 
+                n = self.wget_by_day(date_ymd=args[1])
                 print 'er records in day:', n
-            elif args[0] == 'wget_yfer_range': 
-                n = self.wget_yfer_range(*args[1:])
+            elif args[0] == 'wget_range': 
+                n = self.wget_range(*args[1:])
                 print 'total ER records in range:', n
-            elif args[0] == 'wget_yfer_next_months': 
+            elif args[0] == 'wget_mths': 
                 if len(args) > 1: 
                     m = int(args[1])
-                    n = self.wget_yfer_next_months(m)
+                    n = self.wget_mths(m)
                 else:
                     m = 3
-                    n = self.wget_yfer_next_months()
+                    n = self.wget_mths()
                 print 'total ER records in next %d months:' % m, n
-            elif args[0] == 'insert_raw_er_record': 
-                i = self.insert_raw_er_record(*args[1:])
+            elif args[0] == 'delete_er': 
+                i = self.delete_er(
+                    ticker=args[1], 
+                    source_id=args[2], 
+                    raw_date=args[3],
+                    raw_time=args[4])
+                print '%d records delete' % i
+            elif args[0] == 'upsert_er': 
+                i = self.upsert_er(
+                    ticker=args[1], 
+                    source=args[2], 
+                    raw_date=args[3],
+                    raw_time=args[4])
                 print '%d records inserted' % i
-            elif args[0] == 'get_er_record': 
-                for row in self.get_er_record(
+            elif args[0] == 'get_er_dates': 
+                if args[3] != '':
+                    list_qtr = args[3].split(':')
+                else:
+                    list_qtr = []
+
+                if args[4] != '':
+                    list_f = args[4].split(':')
+                else:
+                    list_f = []
+
+                for row in self.get_er_dates(
+                    ticker=args[1], 
+                    stock_id=int(args[2]),
+                    list_qtr=list_qtr,
+                    list_field=list_f,
+                    ):
+                    print row
+            elif args[0] == 'get_er': 
+                for row in self.get_er(
                     ticker=args[1], 
                     source=args[2], 
                     rawdate=args[3],
                     erdate=args[4]):
                     print row
-            elif args[0] == 'do_cyfy_quarter': 
-                print self.do_cyfy_quarter()
+            elif args[0] == 'process': 
+                n = self.process(
+                    force_cyfy=int(args[1])
+                    )
+                print 'Process', n, 'er records'
+            elif args[0] == 'convert': 
+                n = self.convert_old_er_data()
+                print 'convert', n, 'old er/man record'
+            elif args[0] == 'remove_dup': 
+                n = self.remove_dup()
+                print 'removed', n, 'duplicated record'
             else: 
-                self.test('usage')
-    
+                self.run('usage')
+   
+    # ----------------------------------------------------------------------- #
+    def remove_dup(self):
+        """
+        remove duplicated records in table StockER
+        """ 
+       
+        # select all duplicated StockER records
+        self.cursor.execute("""
+            SELECT COUNT(*), StockID, SourceID, RawDate, RawTime, CYQuarter, 
+                FYQuarter, ERDate
+            FROM StockER
+            GROUP BY StockID, SourceID, RawDate, RawTime
+            HAVING COUNT(*) > 1
+            """
+            )
+        
+        rows = self.cursor.fetchall()
+
+        if len(rows) == 0 or rows == None : 
+            print 'L.StockER.remove_dup: no duplicated rows to remove'
+            return 0
+
+        n = 0
+        for row in rows:
+            print row
+            # keep a copy of record, will insert it back later
+            c, stockid, sourceid, rawdate, rawtime, cy, fy, erdate = row
+
+            self.cursor.execute("""
+                DELETE FROM StockER 
+                WHERE StockID=? AND SourceID=? AND RawDate=? AND RawTime=? 
+                """, (stockid, sourceid, rawdate, rawtime,)
+                )
+
+            self.conn.commit()
+            n += self.cursor.rowcount 
+
+            r = self.cursor.execute("""
+                INSERT INTO StockER 
+                (StockID, SourceID, RawDate, RawTime, FYQuarter, CYQuarter, ERDate)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (stockid, sourceid, rawdate, rawtime, fy, cy, erdate)
+            )
+
+            self.conn.commit()
+            n -= self.cursor.rowcount 
+
+        return n
+        
+    # ----------------------------------------------------------------------- #
+    def convert_old_er_data(self):
+        """
+        convert old stock er data into sqlite DB
+        """
+        lines = []
+
+        with open('/home1/uptrendc/tools/data/er/er.raw.man.dat', 'r') as f:
+            lines = f.readlines() 
+        
+        f.close()
+
+        n = 0
+        for line in lines:
+            items = line.strip().split(':')
+
+            if len(items) < 2:
+                continue
+            
+            t = items[0]
+            for d in items[1].split(','): 
+                n += self.upsert_er(ticker=t, source='Man', raw_date=d, 
+                    raw_time='tns', force_overwrite=1)
+            
+                if self.debug:
+                    print 'L.StockER.convert_old_er_data: convert, %s, %s' %\
+                        (t, d)
+        return n
     # ----------------------------------------------------------------------- #
     #CREATE TABLE StockER (
     #StockID   integer NOT NULL,
@@ -1047,35 +1581,110 @@ class StockER(YFDB):
     #FYQuarter char(6),
     #CYQuarter char(6),
     #ERDate    char(10),
-    def do_cyfy_quarter(self):
-        self.cursor.execute("""
-        SELECT * FROM StockER 
-        WHERE FYQuarter is NULL or CYQuarter is NULL or FYQuarter like "%Q9"
-        """)
+    def process_record(self, stock_id=1, source_id=0, rawdate='', 
+        rawtime='tns', tick='', fyend='', do_cyfy=0):
+        """
+        process ER record, 1) ER Date; 2) FY/CY
+        """
+        
+        # get FY/CY quarter
+        (fy, cy) = YFDate().get_FYCY_quarters( 
+            date_ymd=rawdate, 
+            FY_ends=fyend, 
+            ticker=tick
+            )
+        
+        erdate = None
+
+        #
+        # calculate the erdate
+        #
+        if rawtime == 'bmo' or rawtime == 'man':
+            # if bmo - before market open, then rawdate
+            erdate = rawdate
+        elif rawtime == 'amc':
+            # if amc - select the next date > rawdate
+            self.cursor.execute(""" 
+                SELECT Date FROM DailyQuota 
+                WHERE StockID=? and Date>? 
+                ORDER BY Date ASC 
+                LIMIT 1 
+                """, (stock_id, rawdate, )
+                )
+            r = self.cursor.fetchone()
+            
+            if r and len(r):
+                erdate = r[0]
+        elif rawtime == 'tns' and rawdate < YFDate().sp_days[-1]:
+            # if tns and not future date, compare the %1D, the date w/ 
+            # higher 1D% is considered to be erdate
+            self.cursor.execute(""" 
+                SELECT Date, Pert1Day FROM DailyQuota 
+                WHERE StockID=? and Date>=? 
+                ORDER BY Date ASC 
+                LIMIT 2
+                """, (stock_id, rawdate, )
+                )
+
+            r = self.cursor.fetchall()
+            
+            if len(r) > 1 or r:
+                if abs(r[0][1]) >= abs(r[1][1]):
+                    erdate = r[0][0]
+                else:
+                    erdate = r[1][0]
+                print r,erdate
+        return fy, cy, erdate 
+
+    # ----------------------------------------------------------------------- #
+    def process(self, force_cyfy=0):
 
         count_write = 0
-        for row in self.cursor.fetchall():
-            stock_id, source_id, rawdate, rawtime, fy, cy, erate = row
-            
-            self.cursor.execute("""
-            SELECT Ticker, FYEnds
-            FROM Stock
-            WHERE StockID=?""", (stock_id, ))
+        
+        last_sp_day = YFDate().sp_days[-1]
+        self.cursor.execute("""
+        SELECT StockID, SourceID, RawDate, RawTime, FYQuarter, CYQuarter, 
+               ERDate, Ticker, FYEnds
+        FROM StockERSimpleView 
+        WHERE RawDate<=? AND 
+              (ERDate is NULL or CYQuarter is NULL or FYQuarter is NULL)
+        ORDER BY MarketCap DESC
+        """, (last_sp_day,))
 
-            t, fyend = self.cursor.fetchone()
+        rows = self.cursor.fetchall()
 
-            (fy, cy) = YFDate().get_FYCY_quarters(date_ymd=rawdate, 
-                FY_ends=fyend, ticker=t)
+        if len(rows) == 0 or rows == None : 
+            print 'L.StockER.process: no rows to process'
+            return 0
 
-            self.cursor.execute("""
-            UPDATE StockER
-            SET FYQuarter=?, CYQuarter=?
-            WHERE StockID=? AND SourceID=? AND RawDate=? AND RawTime=?
-            """, (fy, cy, stock_id, source_id, rawdate, rawtime) )
+        tot = len(rows)
+        c = 1
+        for row in rows:
+            stock_id, source_id, rawdate, rawtime, fy, cy, erdate, tick,\
+                fyend = row
+        
+            fy_, cy_, erdate = self.process_record(stock_id=stock_id, \
+                source_id=source_id, rawdate=rawdate, rawtime=rawtime,\
+                tick=tick, fyend=fyend, do_cyfy=force_cyfy)
+
+            if force_cyfy: 
+                fy, cy = fy_, cy_
+                    
+            if self.debug: 
+                print 'L.StockER.process: %d/%d - %s, %s %s -> %s, %s/%s' % \
+                    (c, tot, tick, rawdate, rawtime, erdate, fy, cy)
+
+            self.cursor.execute(""" 
+                UPDATE StockER 
+                SET FYQuarter=?, CYQuarter=?, ERDate=?
+                WHERE StockID=? AND SourceID=? AND RawDate=? AND RawTime=? 
+                """, (fy, cy, erdate, stock_id, source_id, rawdate, rawtime) 
+                )
 
             self.conn.commit()
 
             count_write += self.cursor.rowcount 
+            c += 1
         
         return count_write
 
@@ -1097,7 +1706,56 @@ class StockER(YFDB):
 
         print fy_ends
     # ----------------------------------------------------------------------- #
-    def get_er_record(self, ticker, source='YF', rawdate='', erdate='', 
+    # YG
+    def get_er_dates(self, ticker='', stock_id=0, list_qtr=[], list_field=[]): 
+       
+        num_qtr = len(list_qtr)
+
+        if stock_id == 0 and ticker != '':
+            stock_id = YFStock().get_stock_id(ticker)
+     
+        if num_qtr: 
+            self.cursor.execute(""" 
+            SELECT RawDate, RawTime, ERDate, FYQuarter, CYQuarter, SourceID
+            FROM StockER 
+            WHERE StockID=? AND CYQuarter IN (%s) 
+            ORDER BY CYQuarter DESC, SourceID DESC 
+            """ % ','.join('?'*num_qtr), [stock_id] + list_qtr
+            )
+        else:
+            self.cursor.execute(""" 
+            SELECT RawDate, RawTime, ERDate, FYQuarter, CYQuarter, SourceID
+            FROM StockER 
+            WHERE StockID=?
+            ORDER BY CYQuarter DESC, SourceID DESC 
+            """, (stock_id,)
+            )
+       
+        rows = self.cursor.fetchall()
+
+        if list_field == []:
+            return rows
+        else:
+            rd, rt, ed, fq, cq, si = zip(*rows)
+            ret_list = []
+
+            for f in list_field:
+                if f == 'RawDate':
+                    ret_list.append(rd)
+                elif f == 'RawTime':
+                    ret_list.append(rt)
+                elif f == 'ERDate':
+                    ret_list.append(ed)
+                elif f == 'FYQuarter':
+                    ret_list.append(fq)
+                elif f == 'CYQuarter':
+                    ret_list.append(cq)
+
+        return ret_list
+
+
+    # ----------------------------------------------------------------------- #
+    def get_er(self, ticker, source='YF', rawdate='', erdate='', 
         fy_quarter='', cy_quarter=''):
     
         sql_code="""
@@ -1129,39 +1787,113 @@ class StockER(YFDB):
 
         return self.cursor.fetchall()
     # ----------------------------------------------------------------------- #
-    def insert_raw_er_record(self, ticker='', source='YF', er_date='', 
-        er_time=''):
-        stock_id = self.stock_obj.get_stock_id(ticker)
-        source_id = self.sector_obj.get_source_id(source)
+    def delete_er(self, ticker='', source='', source_id=None, raw_date='', 
+        raw_time=''):
+
+        """
+        Delate ER record
+        """
+        # get source_id 
+        if source_id == None: 
+            source_id = self.sector_obj.get_source_id(source)
+      
+        # get stock_id
+        stock_id = YFStock().get_stock_id(ticker)
+
+        if source_id == None or stock_id == None:
+            return 0
+
+        self.cursor.execute(""" 
+            DELETE FROM StockER 
+            WHERE SourceID=? AND StockID=? AND RawDate=? and RawTime=?
+            """, (source_id, stock_id, raw_date, raw_time)
+            )
+        self.conn.commit() 
+
+        return 1
+    # ----------------------------------------------------------------------- #
+    def upsert_er(self, ticker='', source='YF', source_id=None, raw_date='', 
+        raw_time='', force_overwrite=0):
+
+        """
+        Insert ER record, generaly don't overwrite to avoid losing ER dates
+        calculated by self.process(). 
+        """
+        # get source_id 
+        if source_id == None: 
+            source_id = self.sector_obj.get_source_id(source)
+       
+        #
+        # get stock_id and fy_end
+        #
+        self.cursor.execute("""
+            SELECT StockID, FYEnds 
+            FROM Stock 
+            WHERE Ticker=? and Active>=0
+            """, (ticker, )
+            )
+
+        row = self.cursor.fetchone()
+
+        if row is None:
+            stock_id = None
+        else:
+            stock_id, fy_ends = row
 
         # if stock_id == None, invalid ticker, report it the return
         if stock_id == None or source_id == None:
             if self.debug: 
-                print 'E.insert_raw_er_record(): unknown ticker/source - %s %s %s %s'\
-                    % ticker, source, er_date, er_time
+                print 'E.upsert_er(): unknown ticker/source - %s %s %s %s'\
+                    % (ticker, source, raw_date, raw_time)
             return 0
 
         # only insert if no such record, to avoid clear out calculate ER 
         # date/time
-        er_records = self.get_raw_er_record(stockid=stock_id, 
-            sourceid=source_id, rawdate=er_date, rawtime=er_time)
+        er_records = self.get_raw_er_record(
+            stockid=stock_id, 
+            sourceid=source_id, 
+            rawdate=raw_date, 
+            rawtime=raw_time
+            )
 
+        fy, cy, er_date = self.process_record(
+            stock_id=stock_id, 
+            source_id=source_id, 
+            rawdate=raw_date, 
+            rawtime=raw_time,
+            fyend=fy_ends)
+
+        
         row_count = 0
-
+        
+        # if no existing records, just insert
         if er_records == None or len(er_records) == 0:
             r = self.cursor.execute("""
                 INSERT INTO StockER 
-                (StockID, SourceID, RawDate, RawTime)
-                VALUES (?, ?, ?, ?) 
-                """, (stock_id, source_id, er_date, er_time)
+                (StockID, SourceID, RawDate, RawTime, FYQuarter, CYQuarter, ERDate)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (stock_id, source_id, raw_date, raw_time, fy, cy, er_date)
             )
-            row_count = r.rowcount
             self.conn.commit() 
 
+            row_count = r.rowcount
+
+        # if existing and force_overwrite, then update
+        elif force_overwrite:
+            r = self.cursor.execute("""
+                UPDATE StockER SET
+                FYQuarter=?, CYQuarter=?, ERDate=?
+                WHERE StockID=? AND SourceID=? AND RawDate=? AND RawTime=?
+                """, (fy, cy, er_date, stock_id, source_id, raw_date, raw_time)
+                )
+            self.conn.commit() 
+
+            row_count = r.rowcount
+            
         return row_count
 
     # ----------------------------------------------------------------------- #
-    def wget_yfer_next_months(self, num_months=3):
+    def wget_mths(self, num_months=3):
         """
         Get all ER data in next # days from today
         """
@@ -1175,10 +1907,10 @@ class StockER(YFDB):
 
         end = '%04d-%02d-%02d' % (y, m, d)
         
-        return self.wget_yfer_range(today, end)
+        return self.wget_range(today, end)
 
     # ----------------------------------------------------------------------- #
-    def wget_yfer_range(self, start, end):
+    def wget_range(self, start='', end=''):
         """
         Get all ER data in range
         """
@@ -1189,7 +1921,7 @@ class StockER(YFDB):
         for date_ymd in range_day(start, end):
             num_day += 1
 
-            w, n = self.wget_yfer_day(date_ymd=date_ymd)
+            w, n = self.wget_by_day(date_ymd=date_ymd)
             print "day#%03d: %s, read:%3d, write:%3d" % \
                 (num_day, date_ymd, n, w)
 
@@ -1199,10 +1931,14 @@ class StockER(YFDB):
         return (num_write, num_er)
                 
     # ----------------------------------------------------------------------- #
-    def wget_yfer_day(self, date_ymd=''):
+    def wget_by_day(self, source="YF", date_ymd='', force_delete=0):
         """
         Get all ER stock on the day from url:
         http://biz.yahoo.com/research/earncal/20150612.html
+
+        force_delete: delete the existing records of this day, in case, the
+                      ER dates of stock will be updated, in this case, delte
+                      the existing ones.
         """
 
         # date_ymd is the yyyy-mm-dd, convert it to yyyymmdd
@@ -1211,6 +1947,10 @@ class StockER(YFDB):
         url = 'http://biz.yahoo.com/research/earncal/%s.html' % day
 
         p = SimpleHTMLParser(url)
+
+        if self.debug > 5:
+            print url
+            print len(p.html_text)
 
         rows = []
 
@@ -1250,22 +1990,81 @@ class StockER(YFDB):
             # start to parse if seen "Earning Announcment'
             elif re.search('Earnings Announcements for', line):
                 start = 1
-        
+
+        source_id = self.sector_obj.get_source_id(source)
+        # if reading > 3 ER dates, then delete to avoid failure to read html
+        if len(rows) > 3 and force_delete:
+            print 'L.StockER.wget_by_day: delete old ER records on %s' %\
+                date_ymd
+
+            self.cursor.execute(""" 
+                DELETE FROM StockER 
+                WHERE RawDate=? and SourceID=?
+                """, (date_ymd, source_id)
+                )
+            self.conn.commit() 
+
         num_write = 0
         for row in rows:
             ticker, source, date_ymd, er_time = row
 
-            w = self.insert_raw_er_record(ticker=ticker, source=source, \
-                er_date=convert_date(date_ymd), er_time=er_time)
-
-            num_write += w
+            num_write += self.upsert_er(
+                    ticker=ticker,
+                    source=source,
+                    raw_date=date_ymd, 
+                    raw_time=er_time
+                )
 
         if self.debug > 3: 
-            print 'L.StockER.wget_yfer_day(): # of ER on %s - %d/%d' %\
+            print 'L.StockER.wget_by_day: # of ER on %s - %d/%d' %\
             (date_ymd, num_write, len(rows))
 
         return (num_write, len(rows))
 
+    # ----------------------------------------------------------------------- #
+    def add_er(self, ticker='', source='YF', ymd='', er_time=''):
+        """
+        not used anymore, replaced by upsert_er
+        """
+        source_id = self.sector_obj.get_source_id(source)
+
+        self.cursor.execute("""
+        SELECT StockID, FYEnds
+        FROM Stock
+        WHERE Ticker=? AND start<?
+        """, (ticker, ymd, ))
+
+        row = self.cursor.fetchone()
+
+        if row and source_id:
+            stock_id, fyend = row
+            
+            (fy, cy) = YFDate().get_FYCY_quarters(
+                date_ymd=ymd, 
+                FY_ends=fyend, 
+                ticker=ticker
+                )
+
+            if er_time == 'bmo':
+                er_date = ymd
+            else:
+                er_date = None
+
+            r = self.cursor.execute("""
+                INSERT INTO StockER 
+                VALUES (?, ?, ?, ?, ?, ?, ?) 
+                """, (stock_id, source_id, ymd, er_time, fy, cy, er_date)
+            )
+
+            self.conn.commit() 
+
+            n = r.rowcount
+        else:
+            n = 0
+            print 'E.StockER.add_er: invalid ER recode - %s, %s, %s' % \
+                (ticker, source, ymd)
+        
+        return n
     # ----------------------------------------------------------------------- #
     def get_er_time_from_2items(self, str1, str2, ticker=''):
         """
@@ -1384,7 +2183,7 @@ class YFInsiderTransaction(YFDB):
     # ----------------------------------------------------------------------- #
     def __init__(self):
         YFDB.__init__(self, "InsiderTrans")
-        self.debug = 1
+        self.debug = 0
 
     def test(self, *args):
         print args
@@ -1544,23 +2343,59 @@ class Sector(YFDB):
 
     def __init__(self):
         YFDB.__init__(self, "StockSector")
-        self.debug = 1
+        self.debug = 0
 
         # --------------------------- dictionaries -------------------------- #
         # ticker to sector id, industryid, AAPL->'YF',
         self.ticker_source_sector_industry = {}
         self.tickers_in_source_sector_industry = {}
 
-    def test(self, *args): 
+    def run(self, *args): 
         if len(args) < 1 or re.search('usage|help', args[0]):
-            print """yahoofinance.py test_sector <method> <args>
-            
-            all  - all tests
-            convert - conver_all_sector_info()
+            print """yahoofinance.py Sector <method> <args>
+            all       all tests
+            -------------------
+            get_source_id           source_name
+            list_source             <type_info:[SectorSource|CorrType]>
+            dict_source_sector
+            stocks_in               <src> <sector> <ind> <co1:col2..>
+            upsert_industry_stocks  <src> <sector> <ind> <stock1:stock2..>
+            delete_industry_stocks  <src> <sector> <ind> <stock1:stock2..>
+            convert                 conver_all_sector_info()
             """
         else: 
             if args[0] == 'convert': 
                 self.convert_old_sector_info()
+            elif args[0] == 'get_source_id': 
+                print self.get_source_id(source=args[1])
+            elif args[0] == 'get_sector_id': 
+                print self.get_sector_id(sector=args[1])
+            elif args[0] == 'list_source': 
+                print self.list_source(type_info=args[1])
+            elif args[0] == 'dict_source_sector': 
+                d1, d2 = self.dict_source_sector()
+                print d1
+                print d2
+            elif args[0] == 'stocks_in': 
+                print self.stocks_in(
+                    source=args[1],
+                    sector=args[2],
+                    industry=args[3],
+                    list_col=args[4].split(':'),
+                    )
+            elif args[0] == 'upsert_industry_stocks':
+                print self.upsert_industry_stocks(
+                    source=args[1],
+                    sector=args[2],
+                    industry=args[3],
+                    stocks=args[4].split(':'),
+                    )
+            elif args[0] == 'delete_industry_stocks':
+                print self.delete_industry_stocks(
+                    source=args[1],
+                    sector=args[2],
+                    industry=args[3],
+                    )
             else:
                 list_title, list_value = [], []
         
@@ -1572,26 +2407,45 @@ class Sector(YFDB):
                 list_value.append(self.get_industry_name(3))
                 list_title.append("YF")
                 list_value.append(self.get_source_id("YF"))
+
                 list_title.append("Technology")
                 list_value.append(self.get_sector_id("Technology"))
+
                 list_title.append("Computer Peripherals")
-                list_value.append(self.aget_industry_id("Computer Peripherals")) 
+                list_value.append(
+                    self.aget_industry_id("Computer Peripherals")
+                    ) 
+
                 list_title.append("Stocks:Technology")
-                list_value.append(len(self.get_stocks_in_source_sector_industry('YF', 
-                    'Technology', "all")))
+                list_value.append(
+                    len(self.get_stocks_in_source_sector_industry(
+                        'YF', 
+                        'Technology', 
+                        'all')
+                        )
+                    )
+
                 list_title.append("Stocks:Computer Peripherals")
-                list_value.append(';'.join(self.get_stocks_in_source_sector_industry('YF', 
-                    'Technology', "Computer Peripherals")))
+                list_value.append(
+                    ';'.join(self.get_stocks_in_source_sector_industry(
+                        'YF', 'Technology', "Computer Peripherals")
+                        )
+                    )
+
                 list_title.append("YHOO Sector Info")
                 list_value.append(self.get_stock_sector_info_all('YHOO'))
+
                 list_title.append("TSLA Sector Info")
                 list_value.append(self.get_stock_sector_info_all('TSLA'))
+
                 list_title.append("NONE Sector Info")
                 list_value.append(self.get_stock_sector_info('NONE'))
                
-                list_title.append("upsert_ind('TEST', 'test', 'test', ['YHOO', 'AMZN', 'GOOGL'])")
-                list_value.append(self.upsert_industry_stocks('TEST', 'test', 'test', ['YHOO', 'AMZN', 'GOOGL']))
-                #upsert_industry_stocks(self, source='YF', sector='', industry='', stocks=[]):
+                list_title.append(\
+                    "upsert_ind('TEST', 'test', 'test', ['YHOO', 'AMZN', 'GOOGL'])")
+                list_value.append(self.upsert_industry_stocks(
+                    'TEST', 'test', 'test', ['YHOO', 'AMZN', 'GOOGL']))
+                
                 pprint_name_value(list_title, list_value)
 
     # ----------------------------------------------------------------------- #
@@ -1626,7 +2480,7 @@ class Sector(YFDB):
         return self._get_name_by_id(industry_id, 'Industry')
     
     # ----------------------------------------------------------------------- #
-    def _get_id_by_name(self, name, table_name='Source'):
+    def _get_id_by_name(self, name='', table_name='Source'):
         """
         get id by name, from 3 tables, Source, Sector, Indutry
         """
@@ -1646,21 +2500,21 @@ class Sector(YFDB):
             """ % (id_name, table_name, name)
             )
 
-    def aget_source_id(self, name):
-        id = self.get_source_id(name)
+    def aget_source_id(self, source=''):
+        id = self.get_source_id(source=source)
 
         if not id:
-            self.add_source(name, name)
-            id = self.get_source_id(name)
+            self.add_source(name=source, description=source)
+            id = self.get_source_id(source=source)
 
         return id
 
     # ----------------------------------------------------------------------- #
-    def get_source_id(self, name):
-        return self._get_id_by_name(name, table_name='Source')
+    def get_source_id(self, source=''):
+        return self._get_id_by_name(name=source, table_name='Source')
 
     # ----------------------------------------------------------------------- #
-    def add_source(self, name, description=''):
+    def add_source(self, name='', description=''):
         self.cursor.execute("""
             INSERT INTO Source(Name, Description) 
             values (?, ?) 
@@ -1670,84 +2524,147 @@ class Sector(YFDB):
         self.conn.commit()
    
     # ----------------------------------------------------------------------- #
-    def aget_sector_id(self, name):
-        id = self.get_sector_id(name)
+    def aget_sector_id(self, sector=''):
+        id = self.get_sector_id(sector=sector)
         
         if not id:
-            self.add_sector(name, name)
-            id = self.get_sector_id(name)
+            self.add_sector(sector=sector, description=sector)
+            id = self.get_sector_id(sector=sector)
         
         return id
 
     # ----------------------------------------------------------------------- #
-    def get_sector_id(self, name):
-        return self._get_id_by_name(name, table_name='Sector')
+    def get_sector_id(self, sector=''):
+        return self._get_id_by_name(name=sector, table_name='Sector')
 
     # ----------------------------------------------------------------------- #
-    def add_sector(self, name, description=''):
+    def add_sector(self, sector='', description=''):
         self.cursor.execute("""
             INSERT INTO Sector(Name, Description) 
             values (?, ?) 
             """, 
-            (name, description)
+            (sector, description)
             ) 
         self.conn.commit()
    
     # ----------------------------------------------------------------------- #
-    def aget_industry_id(self, name):
+    def aget_industry_id(self, industry=''):
         """
         get or add industry id by name
         """
-        id = self.get_industry_id(name)
+        id = self.get_industry_id(industry=industry)
 
         if not id:
-            self.add_industry(name, name)
-            id = self.get_industry_id(name)
+            self.add_industry(industry=industry, description=industry)
+            id = self.get_industry_id(industry=industry)
 
         return id
 
     # ----------------------------------------------------------------------- #
-    def get_industry_id(self, name):
-        return self._get_id_by_name(name, table_name='Industry')
+    def get_industry_id(self, industry=''):
+        return self._get_id_by_name(name=industry, table_name='Industry')
 
     # ----------------------------------------------------------------------- #
-    def add_industry(self, name, description=''):
+    def add_industry(self, industry='', description=''):
         self.cursor.execute("""
             INSERT INTO Industry(Name, Description) 
             values (?, ?) 
             """, 
-            (name, description)
+            (industry, description)
             ) 
         self.conn.commit()
    
     # ----------------------------------------------------------------------- #
-    def get_all_stock(self, source='YF', sector='', industry='', min_active=0,
-        order_by='MarketCap', order='DESC'):
+    def list_source(self, type_info="StockSource", min=0, max=99):
+        """
+        return list of source
+        """
+        if type_info == "StockSource":
+            min = 0
+            max = 99
+        elif type_info == "CorrType":
+            min = 100
+            max = 999
+
+        self.cursor.execute("""
+            SELECT Name
+            FROM Source
+            WHERE SourceID>=? AND SourceID<=?
+            """, (min, max,)
+            )
+
+        rows = self.cursor.fetchall()
+
+        if len(rows): 
+            return list(zip(*rows)[0])
+        else:
+            return []
+
+    # ----------------------------------------------------------------------- #
+    def dict_source_sector(self, include_all=0):
+        '''
+        function to get dict_source_sector
+        include_all: 1 - add a summary of all 
+        '''
+
+        dict_source_sector = {}
+        dict_source_sector_num = {}
+
+        self.cursor.execute("""
+        SELECT Source, Sector, COUNT(DISTINCT StockID)
+        FROM StockView
+        GROUP BY Source, Sector
+        """
+        )
+
+        rows = self.cursor.fetchall()
+
+        if len(rows):
+            for row in rows:
+                if row[0] in dict_source_sector:
+                    dict_source_sector[row[0]].append(row[1])
+                else:
+                    dict_source_sector[row[0]]=[row[1]]
+
+                if row[0] in dict_source_sector_num:
+                    dict_source_sector_num[row[0]].append(row[2])
+                else:
+                    dict_source_sector_num[row[0]]=[row[2]]
+
+        if include_all:
+            for k, v in dict_source_sector_num.iteritems():
+                dict_source_sector[k].append('all')
+                dict_source_sector_num[k].append(sum(v))
+
+        return dict_source_sector, dict_source_sector_num
+
+    # ----------------------------------------------------------------------- #
+    def stocks_in(self, source='YF', sector='', industry='', min_active=0,
+        order_by='ORDER BY MarketCap DESC', list_col=[]):
         '''
         find all stickers with inputed conditions from VIEW of StockView
         '''
+        if list_col == [] or (len(list_col)==1 and list_col[0]==''):
+            colume = 'Ticker'
+        else:
+            colume = ','.join(list_col)
+        
         sql_code = """
-            SELECT Ticker
+            SELECT DISTINCT %s
             FROM StockView
-            WHERE Source="%s" AND Active>=%d
-            """ % (source, min_active)
+            WHERE Source="%s" AND Active>=%d """ % (colume, source, min_active)
 
-        if sector != '':
-            sql_code += """
-            AND Sector="%s"
-            """ % sector
+        if sector != '' and sector != 'all':
+            sql_code += ' AND Sector="%s" ' % sector
 
-        if industry != '':
-            sql_code += """
-            AND Industry="%s"
-            """ % industry
+        if industry != '' and industry != 'all':
+            sql_code += ' AND Industry="%s" ' % industry
 
         if order_by != '':
-            sql_code += """
-            ORDER BY %s %s
-            """ % (order_by, order)
-
-        return self.fetch_many(sql_code)
+            sql_code += '\n%s'% (order_by)
+        
+        self.cursor.execute(sql_code)
+        return self.cursor.fetchall()
 
     # ----------------------------------------------------------------------- #
     def get_stock_sector_info_all(self, stock, source="YF"): 
@@ -1827,7 +2744,25 @@ class Sector(YFDB):
        
         return self.fetch_many(sql_cmd)
    
-    #WORK
+    def delete_industry_stocks(self, source='YF', sector='', industry=''):
+        source_id = self.get_source_id(source=source)
+        sector_id = self.get_sector_id(sector=sector)
+        industry_id = self.get_industry_id(industry=industry)
+
+        if source_id == None or sector_id == None or industry_id == None:
+            return -1
+
+        self.cursor.execute( """
+        DELETE FROM StockSector 
+        WHERE SourceID=? AND SectorID=? AND IndustryID=?
+        """, (source_id, sector_id, industry_id)
+        )
+
+        self.conn.commit()
+
+        return self.cursor.rowcount 
+
+    # YG
     # CREATE TABLE StockSector (
     # StockID    integer NOT NULL,
     # SourceID   integer NOT NULL,
@@ -1842,16 +2777,19 @@ class Sector(YFDB):
 
     # ----------------------------------------------------------------------- #
     def upsert_industry_stocks(self, source='YF', sector='', industry='', 
-        stocks=[]):
+        stocks=[], remove_old=0):
         """
         update or insert source/sector/industry information with list of stocks
         """
-
-        source_id = self.aget_source_id(source)
-        sector_id = self.aget_sector_id(sector)
-        industry_id = self.aget_industry_id(industry)
-    
+        source_id = self.aget_source_id(source=source)
+        sector_id = self.aget_sector_id(sector=sector)
+        industry_id = self.aget_industry_id(industry=industry)
+   
         num_record = 0
+
+        if remove_old:
+            self.delete_industry_stocks(source=source, sector=sector, 
+                industry=industry)
 
         for stock in stocks:
             stock_id = YFStock().aget_stock_id(stock)
@@ -1860,14 +2798,11 @@ class Sector(YFDB):
                 print 'error ticker - %s' % stock
                 continue
 
-            sql_cmd = """
+            self.cursor.execute( """
             INSERT or REPLACE INTO StockSector 
             (StockID, SourceID, SectorID, IndustryID)
             VALUES (?, ?, ?, ?)
-            """
-   
-            self.cursor.execute(sql_cmd, 
-            (stock_id, source_id, sector_id, industry_id)
+            """, (stock_id, source_id, sector_id, industry_id)
             )
 
             self.conn.commit()
@@ -1927,7 +2862,6 @@ class YFSector(Sector):
             wget_all <1st # code> : get all yahoo finance of 1st code if present
             wget_industry_summary : get list of yhaoo finance ind codes
             wget_industry  <code> : get yahoo finance industry info
-            get_all_stock <active>: source sector industry minactive orderby, order
             """
         else: 
             try: 
@@ -1939,14 +2873,6 @@ class YFSector(Sector):
                     self.wget_industry(*args[1:])
                 elif args[0] == 'wget_all': 
                     self.wget_all(*args[1:])
-                elif args[0] == 'get_all_stock': 
-                    all_stock = self.get_all_stock(
-                        source=args[1],
-                        sector=args[2],
-                        industry=args[3],
-                        min_active=int(args[4])
-                        )
-                    print all_stock
                 else:
                     self.test('usage')
             except:
@@ -2104,21 +3030,22 @@ class YFQuota(YFDB):
     def run(self, *args):
         if len(args) < 1 or re.search('usage|help', args[0]):
             print """yahoofinance.py YFQuota <method> <args>
-            wget_daily      <ticker>
-            _wget_daily     <tciker> <start_ymd> <end_ymd>
-            get_daily       <ticker> [<end_ymd>] [<start_ymd>]
-            delete_daily    <ticker> [<end_ymd>] [<start_ymd>]
-            wget_daily_all  get all yahoo finance of 1st code if present
-            do_calculation  <ticker> : do calcuation of ticker
+            wget      <ticker>
+            _wget     <tciker> <start_ymd> <end_ymd>
+            get       <ticker> [<end_ymd>] [<start_ymd>]
+            get_range <ticker> <end_ymd> <num_days> <offset> <adjust>
+            get_list  <ticker> <stock_id> <list_field> <list_date>
+            delete    <ticker> [<end_ymd>] [<start_ymd>]
+            wget_all  get all yahoo finance of 1st code if present
             """
 
         else:
             try: 
-                if args[0] == 'wget_daily': 
-                    n = self.wget_daily(ticker=args[1], 
+                if args[0] == 'wget': 
+                    n = self.wget(ticker=args[1], 
                         force_wget=int(args[2]))
-                    print "L.YFQuota.wget_daily: %d records from YF" % n
-                elif args[0] == '_wget_daily': 
+                    print "L.YFQuota.wget: %d records from YF" % n
+                elif args[0] == '_wget': 
                     if len(args) > 1:
                         kwa = {}
 
@@ -2128,12 +3055,45 @@ class YFQuota(YFDB):
                         if len(args) > 3: 
                             kwa['end_ymd']=args[3]
                         
-                        print self._wget_daily(**kwa)
+                        print self._wget(**kwa)
                     else:
                         self.run('help') 
 
-                elif args[0] == 'get_daily': 
-                    rows = self.get_daily(*args[1:])
+                elif args[0] == 'get_list': 
+                    if args[3] == '':
+                        lf = []
+                    else:
+                        lf = args[3].split(',')
+
+                    if args[4] == '':
+                        ld = []
+                    else:
+                        ld = args[4].split(',')
+
+
+                    for row in self.get_list(
+                        ticker=args[1], 
+                        stock_id=int(args[2]),
+                        list_field=lf,
+                        list_date=ld):
+                        print row
+                elif args[0] == 'get_range': 
+                    d,o,h,l,c,v = self.get_range(
+                        ticker=args[1], 
+                        end_date=args[2], 
+                        num_days=int(args[3]), 
+                        offset=int(args[4]),
+                        adjust=int(args[5]),
+                        )
+
+                    print '----Date-----'
+                    print '\n'.join(d)
+                    print '----Close-----'
+                    print '\n'.join(map(str,c))
+                    print '----Open-----'
+                    print '\n'.join(map(str,o))
+                elif args[0] == 'get': 
+                    rows = self.get(*args[1:])
                     if rows and len(rows): 
                         pprint_name_value(['#', 'start', 'end'], 
                         [len(rows), rows[0], rows[-1]])
@@ -2141,10 +3101,8 @@ class YFQuota(YFDB):
                         print 'no rows retrieved'
                 elif args[0] == 'delete': 
                     self.delete(*args[1:])
-                elif args[0] == 'wget_daily_all': 
-                    self.wget_daily_all()
-                elif args[0] == 'do_calculation': 
-                    self.do_calculation(*args[1:])
+                elif args[0] == 'wget_all': 
+                    self.wget_all()
                 else:
                     self.run('help')
             except:
@@ -2152,26 +3110,124 @@ class YFQuota(YFDB):
                 #self.test('help')
     
     # ----------------------------------------------------------------------- #
-    # get_daily
-    def get_daily(self, ticker='^GSPC', end_ymd='0000-00-00', 
-        start_ymd='0000-00-00'):
+    def get_list(self, ticker='', stock_id=0, list_field=[], list_date=[]):
+        """
+        get list of YFQuota in list_date
+        """
+
+        # get stock id, exit if None
+        if stock_id == 0 and ticker != '': 
+            stock_id = YFStock().get_stock_id(ticker)
+
+        if stock_id == None:
+            return []
+
+        if list_field == []:
+            list_field_names = '*'
+        else:
+            list_field_names = ','.join(list_field)
+
+        date_in_list = ''
+        if len(list_date):
+            date_in_list = 'AND Date IN (%s)' % ','.join('?'*len(list_date))
+
+        self.cursor.execute("""
+            SELECT %s
+            FROM DailyQuota
+            WHERE StockID=? %s
+            ORDER BY Date DESC
+            """ % (list_field_names,date_in_list), [stock_id] + list_date
+            )
+        
+        return self.cursor.fetchall()
+
+    # ----------------------------------------------------------------------- #
+    def get_range(self, ticker='^GSPC', end_date='0000-00-00', num_days='100', 
+        offset=0, adjust=1):
+        """
+        get historic data by range, like (TSLA, 2015-10-23, 100)
+        """
+
+        # get stock id, exit if None
+        stock_id = YFStock().get_stock_id(ticker)
+        if stock_id == None:
+            return []
+        
+        # if offset !=0, get the date after offset
+        if offset != 0:
+            more_or_less = '>'
+            order = 'ASC'
+            if offset < 0:
+                more_or_less = '<'
+                order = 'DESC'
+                offset = -1 * offset
+       
+            self.cursor.execute("""
+                SELECT Date
+                FROM DailyQuota 
+                WHERE StockID=? AND Date%s? 
+                ORDER BY Date %s
+                LIMIT ? 
+                """ % (more_or_less, order), (stock_id, end_date, offset,)
+            )
+
+            rows = self.cursor.fetchall()
+            if len(rows) != 0:
+                if more_or_less == '>': 
+                    end_date = rows[-1][0]
+                else:
+                    end_date = rows[-1][0]
+      
+        self.cursor.execute("""
+            SELECT Date, Open, High, Low, Close, AdjClose, Volume
+            FROM DailyQuota
+            WHERE StockID=? AND Date<=? 
+            ORDER BY Date DESC
+            LIMIT ?
+            """, (stock_id, end_date, num_days,)
+            )
+        
+        # get all rows, but in desc order, need to reverse it
+        rows = self.cursor.fetchall()
+        rows.reverse()
+        
+        len_rows= len(rows)
+        
+        list_date, list_open, list_high, list_low, list_close, list_adj_close,\
+            list_vol = zip(*rows)
+        
+        # if last row, close != adjclose, do ratio calculation
+        if not adjust or rows[0][5] != rows[0][4]:
+            list_ratio = [ac/c for c, ac in zip(list_close, list_adj_close)]
+        
+            list_open = [o*r for o, r in zip(list_open, list_ratio)]
+            list_high = [h*r for h, r in zip(list_high, list_ratio)]
+            list_low = [l*r for l, r in zip(list_low, list_ratio)]
+        else:
+            list_adj_close = list_close
+
+        return list_date, list_open, list_high, list_low, list_adj_close, \
+            list_vol
+    # ----------------------------------------------------------------------- #
+    def get(self, ticker='^GSPC', end_ymd='0000-00-02', 
+        start_ymd='0000-00-02'):
+
         """
         get stock historic quota from local SQLite database
         """
         stock_id = YFStock().get_stock_id(ticker)
 
-        print start_ymd, end_ymd
         if stock_id:
             sql_cmd = """
             SELECT * FROM DailyQuota 
             WHERE StockID=%s """ % (stock_id)
 
-            if end_ymd != '' and end_ymd != '0000-00-00':
+            if end_ymd != '' and end_ymd != '0000-00-02':
                 sql_cmd += """
                 AND Date<="%s"
                 """ % end_ymd
 
-            if start_ymd != '' and start_ymd != '0000-00-00':
+            if start_ymd != '' and start_ymd != '0000-00-02':
                 sql_cmd += """
                 AND Date>="%s"
                 """ % start_ymd
@@ -2181,17 +3237,17 @@ class YFQuota(YFDB):
             """
 
             if self.debug > 5 :
-                print 'YFQuota.get_daily() - SQL command:', sql_cmd
+                print 'YFQuota.get() - SQL command:', sql_cmd
 
             return self.fetch_many_rows(sql_code=sql_cmd)
         else:
             return None
     
     # ----------------------------------------------------------------------- #
-    # get_daily/classmethod, only for YFDate to load SP
+    # get/classmethod, only for YFDate to load SP
     @classmethod
-    def static_get_daily(self, ticker='^GSPC', end_ymd='0000-00-00', 
-        start_ymd='0000-00-00', wget_if_none=0):
+    def static_get(self, ticker='^GSPC', end_ymd='0000-00-03', 
+        start_ymd='0000-00-03', wget_if_none=0):
 
         """
         get stock historic quota from local SQLite database
@@ -2208,23 +3264,23 @@ class YFQuota(YFDB):
         WHERE StockID=%s
         """ % (stock_id)
 
-        if end_ymd != '' and end_ymd != '0000-00-00':
+        if end_ymd != '' and end_ymd != '0000-00-03':
             sql_cmd += ' AND Date<="%s"' % end_ymd
 
-        if start_ymd != '' and start_ymd != '0000-00-00': 
+        if start_ymd != '' and start_ymd != '0000-00-03': 
             sql_cmd += ' AND Date>="%s"' % start_ymd
            
         sql_cmd += "\nORDER by Date"
 
         if debug_level > 2: 
-            print 'L.YFQuota.static_get_daily() - SQL command:', sql_cmd
+            print 'L.YFQuota.static_get() - SQL command:', sql_cmd
 
         #return self.fetch_many_rows(sql_code=sql_cmd)
         cursor.execute(sql_cmd)
         rows = cursor.fetchall()
 
         if len(rows) == 0 and wget_if_none:
-            self._wget_daily(ticker=ticker)
+            self._wget(ticker=ticker)
 
             cursor.execute(sql_cmd) 
             rows = cursor.fetchall()
@@ -2300,50 +3356,85 @@ class YFQuota(YFDB):
             return 0
 
     # ----------------------------------------------------------------------- #
-    def wget_daily(self, ticker='^GSPC', force_wget=0):
+    def wget(self, ticker='^GSPC', force_wget=0):
         """
-        This is a wrapper of _wget_daily():
+        This is a wrapper of _wget():
         1) get existing rows of this ticker;
         2) only wget rows between last row and last row of sp days
         """
 
+        stock_id = YFStock().aget_stock_id(ticker)
+
         # if invalid ticker, return None
-        if YFStock().aget_stock_id(ticker) == None: 
-            print "E.YFQuota.wget_daily(): invalid ticker - ", ticker
-            return None
+        if stock_id == None:
+            print "E.YFQuota.wget: invalid ticker - ", ticker
+            return 0
       
         rows = []
         if not force_wget: 
-            rows = self.get_daily(ticker)
+            rows = self.get(ticker)
         
         # len(rows) == 0, means not no records in db
         if rows == None or len(rows) == 0:
             start_date = START_DATE
-            if self.debug > 2:
-                print "YFQuota.wget_daily(): no records for ticker -", ticker,\
-                    "so using -", start_date
         else:
             # if we have records, only get records btwn last day and today
             start_date = rows[-1][1]
-            if self.debug > 2:
-                print "YFQuota.wget_daily(): start_date for ticker -", ticker,\
-                    "is", start_date
-       
-        end_date = self.yfdate.sp_days[-1]
+      
+        if ticker == '^GSPC': 
+            end_date = self.yfdate.today_ymd
+        else:
+            end_date = self.yfdate.sp_days[-1]
 
+        if self.debug: 
+            print "D.YFQuota.wget: %s, %s -> %s" % \
+                (ticker, start_date, end_date)
+       
         n = 0
         if start_date < end_date: 
-            n = self._wget_daily(ticker=ticker, start_ymd=start_date, \
+            n = self._wget(ticker=ticker, start_ymd=start_date, \
                 end_ymd= end_date)
 
-        if self.debug > 2: 
-            print "YFQuota.wget_daily(): wget", n, "records from YF"
+            if self.debug: 
+                print "D.YFQuota.wget: wget", n, "records from YF"
+            
+
+            # Update Table - stock, if didn't get records, then no need
+            if n > 0:
+                self.cursor.execute("""
+                    SELECT AdjClose, VolumeAverage3M 
+                    FROM DailyQuota
+                    WHERE StockID=?
+                    ORDER BY Date DESC
+                    LIMIT 1
+                    """, (stock_id,)
+                )
+                ac, av = self.cursor.fetchone()
+    
+                self.cursor.execute("""
+                    select max(date), min(date) from dailyquota where stockid=?
+                    """, (stock_id,)
+                )
+                end, start = self.cursor.fetchone()
+    
+                self.cursor.execute("""
+                    UPDATE Stock SET
+                    Close=?, AvgVol=?, Start=?, End=?
+                    WHERE StockID=?
+                    """, (ac, av, start, end, stock_id, )
+                )
+    
+                self.conn.commit()
+            
+            print ticker, n, 'recordes'
+        else: 
+            print "already latest", start_date, end_date
        
         return n
     
     # ----------------------------------------------------------------------- #
     @classmethod
-    def _wget_daily(self, ticker='^GSPC', start_ymd='', end_ymd = ''):
+    def _wget(self, ticker='^GSPC', start_ymd='', end_ymd = ''):
         '''
         The real function to wget yahoofinance historic Quota. 
 
@@ -2383,14 +3474,14 @@ class YFQuota(YFDB):
             """
             SELECT StockID, FYEnds, Start, End
             FROM Stock 
-            WHERE Ticker=? AND Active>0
+            WHERE Ticker=? AND Active>=0
             """, (ticker,)
             )
 
         row = cursor.fetchone()
 
         if row == None or len(row) == 0:
-            print 'E.YFQuota._wget_daily: invalid ticker - %s' % ticker
+            print 'E.YFQuota._wget: invalid ticker - %s' % ticker
             return -1
 
         stock_id, fy_ends, start, end = row
@@ -2437,7 +3528,7 @@ class YFQuota(YFDB):
             response = urlopen(req) 
             data = str(response.read().decode('utf-8').strip()) 
         except: 
-            print 'E.YFQuota._wget_daily: wget historic quota - %s, %s' \
+            print 'E.YFQuota._wget: wget historic quota - %s, %s' \
                 % (ticker, url)
             return -1
        
@@ -2455,7 +3546,7 @@ class YFQuota(YFDB):
 
         # if 0 records, return 0
         if len(rows) == 0:
-            print 'W.YFQuota._wget_daily: get 0 valid records from YF -', \
+            print 'W.YFQuota._wget: get 0 valid records from YF -', \
                 ticker, start_ymd, end_ymd
             return 0
 
@@ -2482,6 +3573,7 @@ class YFQuota(YFDB):
             )
 
         rows_last_year = cursor.fetchall()
+        rows_last_year.reverse()
         len_rows_last_year = len(rows_last_year)
    
         # 
@@ -2521,11 +3613,10 @@ class YFQuota(YFDB):
         list_pert_1day = [last_pert_1day] * (252 - len_rows_last_year) + \
             list(list_pert_1day)
         
-        print list_date
         list_vol = map(int, list_vol)
         list_adj_close = map(float, list_adj_close)
 
-        if debug_level > 5 or first_date > "2015-09-29":
+        if debug_level > 5:
             print '!!!!!!!!!!!!!! before process !!!!!!!!!!!!!!!!!!!'
             print 'url->', url
             print '\n'.join(rows[:3])
@@ -2563,7 +3654,7 @@ class YFQuota(YFDB):
             # VolumeAverage3M  integer DEFAULT 0,
             # VolumePerAverage real    DEFAULT 0.0,
             #
-            avg_vol_3m = sum(list_vol[:-NUM_T_DAYS_ONE_QUARTER]) / \
+            avg_vol_3m = sum(list_vol[-NUM_T_DAYS_ONE_QUARTER:]) / \
                 NUM_T_DAYS_ONE_QUARTER
             vol_per_avg = percentage(v, avg_vol_3m)
 
@@ -2666,10 +3757,10 @@ class YFQuota(YFDB):
                 cursor.execute(""" 
                     SELECT Date, Pert1Day 
                     FROM DailyQuota 
-                    WHERE Date<=? AND StockID=1
+                    WHERE Date<? AND StockID=1
                     ORDER BY Date DESC
                     LIMIT ?
-                    """, (first_date, NUM_T_DAYS_ONE_QUARTER)
+                    """, (d, NUM_T_DAYS_ONE_QUARTER)
                     )
 
                 rows_sp_1q = cursor.fetchall()
@@ -2677,7 +3768,7 @@ class YFQuota(YFDB):
                 len_rows_sp_1q = len(rows_sp_1q)
                 
                 if len_rows_sp_1q == 0:
-                    list_sp_date = [''] * NUM_T_DAYS_ONE_QUARTER
+                    list_sp_date = list_date[-NUM_T_DAYS_ONE_QUARTER:]
                     list_sp_pert_1day_1q = [0.0] * NUM_T_DAYS_ONE_QUARTER
                 elif len_rows_sp_1q < NUM_T_DAYS_ONE_QUARTER: 
                     list_sp_date, list_sp_pert_1day_1q = zip(*rows_sp_1q)
@@ -2714,15 +3805,10 @@ class YFQuota(YFDB):
             else: 
                 beta_3m = np.around(_covariance_/_variance_, decimals = 2)
 
-            #print "!!! BETA !!!"
-            #print list_sp_pert_1day_1q[-10:]
-            #print list_pert_1day[-10:]
-            #print beta_3m
-
             #
             # print out debug info for each row
             #
-            if debug_level > 5 or d > "2015-09-29":
+            if debug_level > 5 and d > "2015-09-29":
                 counter += 1
 
                 print "!!!!!!!!!!! during process: #", counter, "!!!!!!!!!!!"
@@ -2814,35 +3900,58 @@ class YFQuota(YFDB):
             conn.commit()
 
             if r.rowcount != len(rows_to_update):
-                print 'E.YFQuota._wget_daily: diff num commit, %d vs, %d'\
+                print 'E.YFQuota._wget: diff num commit, %d vs, %d'\
                     % (len(rows), r.rowcount)
 
         if debug_level:
-            print 'YFQuota._wget_daily: get %d records from %s' % \
+            print 'YFQuota._wget: get %d records from %s' % \
                 (len(rows), url)
 
         return r.rowcount
 
     # ----------------------------------------------------------------------- #
-    def wget_daily_all(self):
+    def wget_all(self):
         """
         get daily historic data from yahoo finance
         """
 
-        # 1st to update SP500 data
-        if self.debug: 
-            print "YFQuota.wget_daily_all(): wget daily quota - SP500"
-        self.wget_daily('^GSPC')
-
-        # load self.yfdate again to have latest sp_days[-1]
+        #
+        # Step 0. reload SP500, need spday[-1] for wget stock
+        #
+        self.wget('^GSPC')
         self.yfdate.load_sp_days()
 
-        all_stocks = YFSector().get_all_stock(source='YF', min_active=0)
+        last_sp_day = self.yfdate.sp_days[-1]
 
-        for stock in all_stocks:
-            if self.debug: 
-                print "YFQuota.wget_daily_all(): wget daily quota -", stock
-            self.wget_daily(stock)
+        self.cursor.execute("""
+            SELECT ticker FROM Stock
+            WHERE Active>=0 and End<?
+            ORDER BY MarketCap DESC
+            """, (last_sp_day,)
+            )
+
+        rows = self.cursor.fetchall()
+
+        total = len(rows)
+        num = 1
+        num_stock = 0
+        num_record = 0
+
+        for row in rows:
+            print "# %4d/%d: wget %5s daily quota from yahoo finance...." % \
+                (num, total, row[0]),
+            num += 1
+            n = self.wget(ticker=row[0])
+
+            if n > 0:
+                num_stock += 1
+                num_record += n
+
+        if self.debug: 
+            print "YFQuota.wget_all(): wget %d stock, %d records" % \
+                (num_stock, num_record)
+
+        return (num_stock, num_record)
 
     # ----------------------------------------------------------------------- #
     def calculate_pert_list(self, value=0.0, base_list=[]):
@@ -2864,18 +3973,6 @@ class YFQuota(YFDB):
         else:
             return 100.0 * (value - base) / base
 
-    # ----------------------------------------------------------------------- #
-    #WORK
-    def do_correlation(self, stock_id=0, date_='', num_days=21):
-        list_stock_1d = self.fetch_many(
-            """
-            SELECT Pert1Day
-            FROM DialyQuota
-            WHERE Date<="%s" AND StockID=%d
-            LIMIT %d
-            """ % (date_, stock_id, num_days)
-        )
-    
     # ----------------------------------------------------------------------- #
     def do_calculation(self, ticker=''):
         '''
@@ -2901,7 +3998,7 @@ class YFQuota(YFDB):
 
         stock_id, fy_ends, start, end = row
 
-        data_rows = self.get_daily(ticker=ticker, 
+        data_rows = self.get(ticker=ticker, 
             end_ymd=YFDate().sp_days[-1], start_ymd=end)
         
         if self.debug: 
@@ -3119,25 +4216,28 @@ class YFDate:
         self.get_oe_days()
         self.have_oe_day = 0
 
-        self.debug = 1
+        self.debug = 0
 
     # ----------------------------------------------------------------------- #
-    def test(self, *args):
+    def run(self, *args):
         if len(args) < 1 or re.search('usage|help', args[0]):
-            print """usage: yahoofinance.py test-yfdate <method> <args> 
+            print """usage: yahoofinance.py YFDate <method> <args> 
             all               
-            today              : print out today values
-            oe                 : print out oe days
-            spdays             : print out sp days 
-            date_to_nthweekday <date> <text|number>
-            spday_index        <date> 
-            spday_of           <date> 
-            spday_diff         <date1> <date2>
-            spday_offset       <date1> <offset>
-            FY_quarter_ends    MM-DD
-            date_to_FY_quarter date<YYYY-MM-DD> FYends<MM-DD>
-            get_FYCY_quarters  date<YYYY-MM-DD> FYends<MM-DD> ticker
-            FY_to_CY_quarter   date<YYYY-MM-DD> FY-Qtr FYends<MM-DD>
+            today                     print out today values
+            oe                        print out oe days
+            spdays                    print out sp days 
+            date_to_nthweekday        <date> <text|number>
+            spday_index               <date> 
+            spday_of                  <date> 
+            spday_diff                <date1> <date2>
+            spday_offset              <date1> <offset>
+            FY_quarter_ends           MM-DD
+            date_to_CY_quarter        date<YYYY-MM-DD>
+            date_to_FY_quarter        date<YYYY-MM-DD> FYends<MM-DD>
+            get_FYCY_quarters         date<YYYY-MM-DD> FYends<MM-DD> ticker
+            FY_to_CY_quarter          date<YYYY-MM-DD> FY-Qtr FYends<MM-DD>
+            last_N_quarter_by_quarter qtr num_qtr offset
+            quarter_between_dates     start end
             """
         else:
             try: 
@@ -3156,12 +4256,16 @@ class YFDate:
 
                     list_title.append('========>')
                     list_value.append('date_to_nthweekday()')
-                    for d in ['2015-05-01', '2015-05-02', '2015-05-06', '2015-05-07', '2015-05-14', '2015-05-21']: 
+                    for d in ['2015-05-01', '2015-05-02', '2015-05-06', \
+                            '2015-05-07', '2015-05-14', '2015-05-21']: 
                         list_title.append('txt,%s' % d)
                         list_value.append(self.date_to_nthweekday(d))
-                    for d in ['2015-06-01', '2015-06-02', '2015-06-06', '2015-06-07', '2015-06-14', '2015-06-21']: 
+                    for d in ['2015-06-01', '2015-06-02', '2015-06-06', \
+                            '2015-06-07', '2015-06-14', '2015-06-21']: 
                         list_title.append('num,%s' % d)
-                        list_value.append(self.date_to_nthweekday(d, 'number'))
+                        list_value.append(
+                            self.date_to_nthweekday(d, 'number')
+                            )
 
                     list_title.append('========>')
                     list_value.append('SP Days')
@@ -3171,7 +4275,8 @@ class YFDate:
 
                     list_title.append('========>')
                     list_value.append('spday_index()')
-                    for d in ['2015-03-01', '2015-03-02', '2015-03-03', '2015-03-04', '2015-03-05', '2015-03-06']: 
+                    for d in ['2015-03-01', '2015-03-02', '2015-03-03', \
+                            '2015-03-04', '2015-03-05', '2015-03-06']: 
                         list_title.append(d)
                         list_value.append(self.sp_days[self.spday_index(d)])
 
@@ -3264,8 +4369,24 @@ class YFDate:
                 elif args[0] == 'spday_offset':
                     print self.spday_offset(*args[1:])
 
+#    def last_N_quarter_by_date(self, date_ymd, num_qtr, offset=0):
+                elif args[0] == 'last_N_quarter_by_quarter':
+                    print self.last_N_quarter_by_quarter(
+                        this_quarter=args[1], 
+                        num_quarter=int(args[2]),
+                        offset=int(args[3])
+                        )
+
+                elif args[0] == 'quarter_between_date':
+                    print self.quarter_between_date(
+                        start=args[1],
+                        end=args[2]
+                        )
                 elif args[0] == 'FY_quarter_ends':
                     print self.FY_quarter_ends(FY_ends=args[1])
+
+                elif args[0] == 'date_to_CY_quarter':
+                    print self.date_to_CY_quarter(date_ymd=args[1])
 
                 elif args[0] == 'date_to_FY_quarter':
                     print self.date_to_FY_quarter(date_ymd=args[1], 
@@ -3279,10 +4400,10 @@ class YFDate:
                     print self.get_FYCY_quarters(date_ymd=args[1],
                         FY_ends=args[2], ticker=args[3])
                 else: 
-                    self.test('help')
+                    self.run('help')
             except: 
                 raise
-                self.test('help')
+                self.run('help')
 
     # ----------------------------------------------------------------------- #
     def get_today_dates(self):
@@ -3353,11 +4474,11 @@ class YFDate:
         self.sp_days = []
 
         # YFQuota(1) = load_sp_only
-        rows = YFQuota.static_get_daily('^GSPC', wget_if_none=1)
+        rows = YFQuota.static_get('^GSPC', wget_if_none=1)
 
         #if not rows or not len(rows):
-        #  YFQuota()._wget_daily('^GSPC') 
-        # rows = YFQuota.get_daily('^GSPC')
+        #  YFQuota()._wget('^GSPC') 
+        # rows = YFQuota.get('^GSPC')
 
         if len(rows):
             for line in rows:
@@ -3599,11 +4720,79 @@ class YFDate:
         return (fy_qtr, cy_qtr)
 
     # ----------------------------------------------------------------------- #
+    def last_N_quarter_by_date(self, date_ymd='', num_quarter=0, offset=0):
+        """
+        provided a list of <num_qtr> quarters ending date_ymd
+        if one_more=1, move fwd 1, like 2015-10-21 -> 2016Q1
+        """
+        this_qtr = self.date_to_CY_quarter(date_ymd)
+
+        return self.last_N_quarter_by_quarter(
+            this_quarter=this_qtr,
+            num_quarter=num_quarter, 
+            offset=offset)
+
+    # ----------------------------------------------------------------------- #
+    def last_N_quarter_by_quarter(self, this_quarter='', num_quarter=0, 
+        offset=0):
+        """
+        offset = number of quarters to move, for example, 
+        last__quarter_by_quarter('2015Q1', 10, offset=1), return list of qtr
+        staring from 2015Q2
+        """
+        list_qtr = []
+
+        y, q = map(int, this_quarter.split('Q'))
+        
+        q += offset
+
+        for i in range(num_quarter):
+            if q >=5:
+                y += (q-1)/4
+                q = (q-1)%4 + 1
+
+            if q <= 0:
+                q = (q-1)%4 + 1
+                y -= 1
+
+            list_qtr.append('%dQ%d' % (y, q))
+            q -= 1
+
+        return list_qtr
+
+    # ----------------------------------------------------------------------- #
+    def quarter_between_date(self, start='', end=''):
+        start_qtr = self.date_to_CY_quarter(date_ymd=start)
+        end_qtr = self.date_to_CY_quarter(date_ymd=end)
+
+        sy, sq = map(int, start_qtr.split('Q'))
+        ey, eq = map(int, end_qtr.split('Q'))
+
+        return self.last_N_quarter_by_quarter(this_quarter=end_qtr, 
+            num_quarter=4*(ey-sy)+(eq-sq))
+    # ----------------------------------------------------------------------- #
+    def date_to_CY_quarter(self, date_ymd=''):
+        """
+        Covert date to CY quarter, no tricks
+        """
+        y, m, d = map(int, date_ymd.split('-'))
+        mmdd = '%02d-%02d' % (m,d)
+
+        if mmdd <= '03-31':
+            q = 1
+        elif mmdd <= '06-31':
+            q = 2
+        elif mmdd <= '09-31':
+            q = 3
+        else:
+            q = 4
+
+        return '%dQ%d' % (y, q)
+    # ----------------------------------------------------------------------- #
     def date_to_FY_quarter(self, date_ymd='', FY_ends='12-31'):
         """
         Covert date to FY quarter to CY, depends on FY ends
         """
-        
         y, m, d = map(int, date_ymd.split('-'))
         mmdd = '%02d-%02d' % (m,d)
 
@@ -3666,9 +4855,13 @@ class YFDate:
         """
         Based the FY ends of stock, covert FY quarter to CY quarter. 
         """
+        #if 12-31, make FY/CY like 2015Q3/2014Q3, not right
+        #if FY_ends == '12-31':
+        #   FY_ends = '01-01'
+
         m, d = map(int, FY_ends.split('-'))
 
-        days_diff = 30 * (m - 1) + d + 45
+        days_diff = 365 - (30 * (m - 1) + d + 45)
 
         a = re.search('(\d{4})Q(\d)', FY_quarter)
 
@@ -3685,6 +4878,10 @@ class YFDate:
         if q <= 0:
             q += 4
             y -= 1
+
+        if q >= 5:
+            q -= 4
+            y += 1
 
         return '%dQ%d' % (y, q)
 
@@ -3779,12 +4976,13 @@ usage: yahoofinance.py <command> [<args>]
 
 The most commonly used yahoofinance commands are: 
 shared       Test shared functions 
-yfdate       Test class YFDate 
-yfstock      Test class YFStock
-YFQuota      Run/Test functions in class YFQuota
+YFDate       Run/test class YFDate 
+YFStock      Run/test class YFStock
+ERCorr       Run/test class ERCorrelation
+YFQuota      Run YFQuota functions
 yfsector     Test class YFSector 
-sector       Test class Sector
-stocker      Test class StockER
+Sector       Test class Sector
+StockER      Run StockER functions
 insider      Test class Insider
 insidertrans Test class Insider
 
@@ -3805,13 +5003,17 @@ if __name__ == "__main__":
     elif sys.argv[1] == 'shared': 
         test_shared_func(*sys.argv[2:])
 
-    elif sys.argv[1] == 'yfdate': 
+    elif sys.argv[1] == 'YFDate': 
         d = YFDate()
-        d.test(*sys.argv[2:])
+        d.run(*sys.argv[2:])
 
-    elif sys.argv[1] == 'yfstock': 
-        s = YFStock()
-        s.test(*sys.argv[2:])
+    elif sys.argv[1] == 'ERCorr': 
+        erc = ERCorrelation()
+        erc.run(*sys.argv[2:])
+
+    elif sys.argv[1] == 'YFStock': 
+        yfstock = YFStock()
+        yfstock.run(*sys.argv[2:])
 
     elif sys.argv[1].lower() == 'yfquota': 
         hd = YFQuota()
@@ -3821,13 +5023,13 @@ if __name__ == "__main__":
         s = YFSector()
         s.test(*sys.argv[2:])
 
-    elif sys.argv[1] == 'sector': 
+    elif sys.argv[1] == 'Sector': 
         s = Sector()
-        s.test(*sys.argv[2:])
+        s.run(*sys.argv[2:])
 
-    elif sys.argv[1] == 'stocker':
+    elif sys.argv[1] == 'StockER':
         er = StockER()
-        er.test(*sys.argv[2:])
+        er.run(*sys.argv[2:])
 
     elif sys.argv[1] == 'insider': 
         i = YFInsider()
@@ -3837,33 +5039,5 @@ if __name__ == "__main__":
         it = YFInsiderTransaction()
         it.test(*sys.argv[2:])
 
-    elif sys.argv[1] == 'xxxx': 
-        #def date_to_nthweekday(self, date, format='text')
-        if len(sys.argv) > 2 and sys.argv[2] == 'date_to_nthweekday':
-            print d.date_to_nthweekday(*sys.argv[3:])
-
-        elif len(sys.argv) > 2 and sys.argv[2] == 'sp_days':
-            try:
-                print 'sp500 day:', _yfd.sp_days[int(sys.argv[3])]
-            except:
-                print 'incorrect range :', sys.argv[3]
-
-    
-            #def number_days(self, str):
-            for s in ['10d', '-10d', '10', '-10', '10W', '-10w', '10m', '-10M']:
-                print s, ': ', _yfd.number_days(s)
-    
-            for m in ['Jan', 'january', 'Feb', 'March', 'August', 'Ocx']:
-                print _yfd.month_atoi(m)
-                print month_atoi(m)
-    
-            for s in ['August 2, 2001', 'Dec 31, 1999', 'Oct 2', 'May 31']: 
-                print s, '--> ', _yfd.date_atoymd(s)
-        
-            #day_offset(self, mmdd, offset):
-            for mmdd, offset in zip( 
-                ['12-31', '01-15', '05-31'],
-                ['90',    '45',    '91']
-                ):
-                print mmdd, '+', offset, o.day_offset(mmdd, offset)
-    
+    else:
+        usage()
